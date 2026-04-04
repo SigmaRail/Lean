@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
 
 env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/lean-clickhouse
   CLICKHOUSE_HOST: ${{ secrets.CLICKHOUSE_HOST }}
   CLICKHOUSE_PORT: 8123
   CLICKHOUSE_USER: testuser
@@ -21,12 +23,12 @@ jobs:
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Pull LEAN image
-        run: docker pull ghcr.io/${{ github.repository_owner }}/lean-clickhouse:latest
+        run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
       
       - name: Test ClickHouse HTTP endpoint
         run: |
@@ -53,6 +55,6 @@ jobs:
             -e CLICKHOUSE_USER=$CLICKHOUSE_USER \
             -e CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD \
             -e CLICKHOUSE_DATABASE=$CLICKHOUSE_DATABASE \
-            ghcr.io/${{ github.repository_owner }}/lean-clickhouse:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
             --help
           echo "✅ LEAN container runs successfully"
