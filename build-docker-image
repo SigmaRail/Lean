@@ -1,0 +1,38 @@
+#!/bin/bash
+#
+# Build LEAN with ClickHouseDataProvider and create Docker image
+# Usage: ./build-docker-image
+#
+
+set -e
+
+echo "🔨 Building LEAN with ClickHouseDataProvider..."
+
+# Clean previous builds
+echo "Cleaning previous builds..."
+dotnet clean -c Release
+
+# Build LEAN in Release mode
+echo "Building LEAN solution..."
+dotnet build -c Release
+
+echo "✅ LEAN build complete"
+
+# Get git commit hash for tagging
+GIT_HASH=$(git rev-parse --short HEAD)
+
+echo "🐳 Building Docker image..."
+docker build \
+  -t ghcr.io/mdiggory/lean-clickhouse:latest \
+  -t ghcr.io/mdiggory/lean-clickhouse:${GIT_HASH} \
+  .
+
+echo "✅ Docker image built successfully"
+echo ""
+echo "📦 Image tags:"
+echo "  - ghcr.io/mdiggory/lean-clickhouse:latest"
+echo "  - ghcr.io/mdiggory/lean-clickhouse:${GIT_HASH}"
+echo ""
+echo "To push to GitHub Container Registry, run:"
+echo "  docker push ghcr.io/mdiggory/lean-clickhouse:latest"
+echo "  docker push ghcr.io/mdiggory/lean-clickhouse:${GIT_HASH}"
