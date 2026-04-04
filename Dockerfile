@@ -1,28 +1,36 @@
 #
-#   LEAN Docker Container 20200522
-#   Cross platform deployment for multiple brokerages
+#   LEAN Docker Container with ClickHouseDataProvider
+#   Custom build from source
 #
 
-# Use base system
-FROM quantconnect/lean:foundation
+FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
 
-MAINTAINER QuantConnect <contact@quantconnect.com>
+WORKDIR /Lean
 
-#Install debugpy and PyDevD for remote python debugging
-RUN pip install --no-cache-dir ptvsd==4.3.2 debugpy~=1.6.7 pydevd-pycharm~=231.9225.15
+# Copy source code
+COPY . .
 
-# Install vsdbg for remote C# debugging in Visual Studio and Visual Studio Code
-RUN wget https://aka.ms/getvsdbgsh -O - 2>/dev/null | /bin/sh /dev/stdin -v 17.10.20209.7 -l /root/vsdbg
+# Build LEAN
+RUN dotnet restore QuantConnect.Lean.sln && \
+    dotnet build QuantConnect.Lean.sln -c Release
 
-COPY ./DataLibraries /Lean/Launcher/bin/Debug/
-COPY ./Lean/Data/ /Lean/Data/
-COPY ./Lean/Launcher/bin/Debug/ /Lean/Launcher/bin/Debug/
-COPY ./Lean/Launcher/config.json /Lean/Launcher/bin/Debug/config.json
-COPY ./Lean/Optimizer.Launcher/bin/Debug/ /Lean/Optimizer.Launcher/bin/Debug/
-COPY ./Lean/Report/bin/Debug/ /Lean/Report/bin/Debug/
-COPY ./Lean/DownloaderDataProvider/bin/Debug/ /Lean/DownloaderDataProvider/bin/Debug/
+# Runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:6.0
 
-# Can override with '-w'
-WORKDIR /Lean/Launcher/bin/Debug
+# Install Python for Python algorithms
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip && \
+    pip3 install --no-cache-dir pythonnet pandas numpy scipy scikit-learn && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /Lean
+
+# Copy built binaries from build stage
+COPY --from=build /Lean/Launcher/bin/Release/net6.0/ /Lean/Launcher/bin/Release/
+COPY --from=build /Lean/Algorithm.Python/bin/Release/net6.0/ /Lean/Algorithm.Python/bin/Release/
+
+# Set working directory
+WORKDIR /Lean/Launcher/bin/Release
 
 ENTRYPOINT [ "dotnet", "QuantConnect.Lean.Launcher.dll" ]
