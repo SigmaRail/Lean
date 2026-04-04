@@ -16,6 +16,7 @@
 
 using System;
 using System.Threading;
+using QuantConnect;
 using QuantConnect.Configuration;
 using QuantConnect.Lean.Engine;
 using QuantConnect.Logging;
@@ -66,14 +67,21 @@ namespace QuantConnect.Lean.Launcher
             //-> Pull job from QuantConnect job queue, or, pull local build:
             job = leanEngineSystemHandlers.JobQueue.NextJob(out var assemblyPath);
 
-            leanEngineAlgorithmHandlers = Initializer.GetAlgorithmHandlers();
-
             if (job == null)
             {
                 const string jobNullMessage = "Engine.Main(): Sorry we could not process this algorithm request.";
                 Log.Error(jobNullMessage);
                 Exit(1);
             }
+
+            ApplyJobParametersToConfig(job);
+            var compositeProviders = Config.Get("composite-data-providers");
+            if (!string.IsNullOrWhiteSpace(compositeProviders))
+            {
+                Config.Set("data-provider", "QuantConnect.Lean.Engine.DataFeeds.CompositeDataProvider");
+                Config.Set("backtesting.data-provider", "QuantConnect.Lean.Engine.DataFeeds.CompositeDataProvider");
+            }
+            leanEngineAlgorithmHandlers = Initializer.GetAlgorithmHandlers();
 
             // Activate our PythonVirtualEnvironment
             PythonInitializer.ActivatePythonVirtualEnvironment(job.PythonVirtualEnvironment);
@@ -145,6 +153,39 @@ namespace QuantConnect.Lean.Launcher
 
             Log.Trace("Program.Main(): Exiting Lean...");
             Environment.Exit(exitCode);
+        }
+
+        private static void ApplyJobParametersToConfig(AlgorithmNodePacket algorithmJob)
+        {
+            if (algorithmJob.DeploymentTarget != DeploymentTarget.LocalPlatform)
+            {
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-host", "clickhouse-host", "vera-host");
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-http-port", "clickhouse-http-port", "vera-port");
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-database", "clickhouse-database", "vera-database");
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-user", "clickhouse-user", "vera-user");
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-password", "clickhouse-password", "vera-password");
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-timeout-seconds", "clickhouse-timeout-seconds");
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-materialize", "clickhouse-materialize");
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-trace", "clickhouse-trace");
+                SetConfigFromJobParameters(algorithmJob, "clickhouse-history-pad-days", "clickhouse-history-pad-days");
+            }
+
+            SetConfigFromJobParameters(algorithmJob, "clickhouse-backtest-start", "clickhouse-backtest-start", "start-date");
+            SetConfigFromJobParameters(algorithmJob, "clickhouse-backtest-end", "clickhouse-backtest-end", "end-date");
+        }
+
+        private static void SetConfigFromJobParameters(AlgorithmNodePacket algorithmJob, string configKey, params string[] parameterKeys)
+        {
+            foreach (var parameterKey in parameterKeys)
+            {
+                if (!algorithmJob.Parameters.TryGetValue(parameterKey, out var value) || string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                Config.Set(configKey, value);
+                return;
+            }
         }
     }
 }

@@ -1,0 +1,58 @@
+name: Test ClickHouse Connectivity
+
+on:
+  workflow_dispatch:
+
+env:
+  CLICKHOUSE_HOST: ${{ secrets.CLICKHOUSE_HOST }}
+  CLICKHOUSE_PORT: 8123
+  CLICKHOUSE_USER: testuser
+  CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+  CLICKHOUSE_DATABASE: vera
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Pull LEAN image
+        run: docker pull ghcr.io/${{ github.repository_owner }}/lean-clickhouse:latest
+      
+      - name: Test ClickHouse HTTP endpoint
+        run: |
+          curl -f http://$CLICKHOUSE_HOST:$CLICKHOUSE_PORT/ping
+          echo "✅ ClickHouse is reachable"
+      
+      - name: Test ClickHouse query
+        run: |
+          RESULT=$(curl -s -u $CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD \
+            "http://$CLICKHOUSE_HOST:$CLICKHOUSE_PORT/?query=SELECT%20count()%20FROM%20$CLICKHOUSE_DATABASE.daily_screener")
+          echo "Daily screener rows: $RESULT"
+          if [ "$RESULT" -gt 0 ]; then
+            echo "✅ ClickHouse data accessible"
+          else
+            echo "❌ No data in daily_screener"
+            exit 1
+          fi
+      
+      - name: Test LEAN container
+        run: |
+          docker run --rm \
+            -e CLICKHOUSE_HOST=$CLICKHOUSE_HOST \
+            -e CLICKHOUSE_PORT=$CLICKHOUSE_PORT \
+            -e CLICKHOUSE_USER=$CLICKHOUSE_USER \
+            -e CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD \
+            -e CLICKHOUSE_DATABASE=$CLICKHOUSE_DATABASE \
+            ghcr.io/${{ github.repository_owner }}/lean-clickhouse:latest \
+            --help
+          echo "✅ LEAN container runs successfully"

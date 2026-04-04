@@ -17,6 +17,7 @@ RUN wget https://aka.ms/getvsdbgsh -O - 2>/dev/null | /bin/sh /dev/stdin -v 17.1
 COPY ./DataLibraries /Lean/Launcher/bin/Debug/
 COPY ./Lean/Data/ /Lean/Data/
 COPY ./Lean/Launcher/bin/Debug/ /Lean/Launcher/bin/Debug/
+COPY ./Lean/Launcher/config.json /Lean/Launcher/bin/Debug/config.json
 COPY ./Lean/Optimizer.Launcher/bin/Debug/ /Lean/Optimizer.Launcher/bin/Debug/
 COPY ./Lean/Report/bin/Debug/ /Lean/Report/bin/Debug/
 COPY ./Lean/DownloaderDataProvider/bin/Debug/ /Lean/DownloaderDataProvider/bin/Debug/
