@@ -1,13 +1,6 @@
-name: Build LEAN Docker Image
+name: Verify LEAN Docker Image
 
 on:
-  push:
-    branches: [main, master]
-    paths:
-      - '**/*.cs'
-      - '**/*.csproj'
-      - 'Dockerfile'
-      - '.github/workflows/build-docker-image.yml'
   workflow_dispatch:
 
 env:
@@ -15,16 +8,13 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/lean-clickhouse
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: read
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -32,39 +22,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-      
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          cache-to: type=inline
+      - name: Pull and verify Docker image
+        run: |
+          echo "Pulling LEAN Docker image..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          echo "Verifying image..."
+          docker inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          echo "Testing image..."
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest --help
       
       - name: Image summary
         run: |
-          echo "## Docker Image Built Successfully ✅" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Image Verified Successfully ✅" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" | sed 's/^/- `/' | sed 's/$/`/' >> $GITHUB_STEP_SUMMARY
+          echo "**Visibility:** 🔒 Private" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Visibility:** 🔒 Private (only accessible with authentication)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Pull command:**" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** This image is built locally and pushed manually." >> $GITHUB_STEP_SUMMARY
+          echo "To rebuild, run locally:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "./build-docker-image" >> $GITHUB_STEP_SUMMARY
+          echo "./push-docker-image" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
