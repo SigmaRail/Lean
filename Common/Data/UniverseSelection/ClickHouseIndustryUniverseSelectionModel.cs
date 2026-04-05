@@ -27,19 +27,19 @@ namespace QuantConnect.Data.UniverseSelection
     /// More granular than sector selection for targeted industry-specific strategies.
     /// Queries ClickHouse database directly via HTTP for fast universe selection.
     /// </summary>
-    public class IndustryUniverseSelectionModel : Universe
+    public class ClickHouseIndustryUniverseSelectionModel : Universe
     {
         private readonly string _industry;
         private readonly int _topN;
         private readonly ClickHouseDataProvider _provider;
 
         /// <summary>
-        /// Initializes a new instance of the IndustryUniverseSelectionModel
+        /// Initializes a new instance of the ClickHouseIndustryUniverseSelectionModel
         /// </summary>
         /// <param name="industry">Industry name (e.g., "Software - Application", "Semiconductors")</param>
         /// <param name="topN">Number of top stocks to select (default: 10)</param>
         /// <param name="universeSettings">Optional universe settings</param>
-        public IndustryUniverseSelectionModel(
+        public ClickHouseIndustryUniverseSelectionModel(
             string industry, 
             int topN = 10,
             UniverseSettings universeSettings = null)
@@ -77,7 +77,7 @@ namespace QuantConnect.Data.UniverseSelection
             
             if (results == null || results.Count == 0)
             {
-                Log.Debug($"IndustryUniverseSelectionModel: No data for {tradingDate:yyyy-MM-dd} industry {_industry}");
+                Log.Debug($"ClickHouseIndustryUniverseSelectionModel: No data for {tradingDate:yyyy-MM-dd} industry {_industry}");
                 return Enumerable.Empty<Symbol>();
             }
 
@@ -93,7 +93,7 @@ namespace QuantConnect.Data.UniverseSelection
                 return Symbol.Create(ticker, SecurityType.Equity, Market.USA);
             }).Where(s => s != null).ToList();
 
-            Log.Debug($"IndustryUniverseSelectionModel: Selected {symbols.Count} symbols from {_industry} industry for {tradingDate:yyyy-MM-dd}");
+            Log.Debug($"ClickHouseIndustryUniverseSelectionModel: Selected {symbols.Count} symbols from {_industry} industry for {tradingDate:yyyy-MM-dd}");
             
             return symbols;
         }

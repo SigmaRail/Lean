@@ -26,17 +26,17 @@ namespace QuantConnect.Data.UniverseSelection
     /// Selects top N stocks by dollar volume, similar to CoarseFundamentalUniverse
     /// but queries ClickHouse directly for faster performance.
     /// </summary>
-    public class DollarVolumeUniverseSelectionModel : Universe
+    public class ClickHouseDollarVolumeUniverseSelectionModel : Universe
     {
         private readonly int _topN;
         private readonly ClickHouseDataProvider _provider;
 
         /// <summary>
-        /// Initializes a new instance of the DollarVolumeUniverseSelectionModel
+        /// Initializes a new instance of the ClickHouseDollarVolumeUniverseSelectionModel
         /// </summary>
         /// <param name="topN">Number of top stocks by dollar volume to select (default: 100)</param>
         /// <param name="universeSettings">Optional universe settings</param>
-        public DollarVolumeUniverseSelectionModel(
+        public ClickHouseDollarVolumeUniverseSelectionModel(
             int topN = 100,
             UniverseSettings universeSettings = null)
             : base(CreateConfiguration(FundamentalUniverseFactory.SymbolFactory.UniverseSymbol()))
@@ -71,7 +71,7 @@ namespace QuantConnect.Data.UniverseSelection
             
             if (results == null || results.Count == 0)
             {
-                Log.Debug($"DollarVolumeUniverseSelectionModel: No data for {tradingDate:yyyy-MM-dd}");
+                Log.Debug($"ClickHouseDollarVolumeUniverseSelectionModel: No data for {tradingDate:yyyy-MM-dd}");
                 return Enumerable.Empty<Symbol>();
             }
 
@@ -87,7 +87,7 @@ namespace QuantConnect.Data.UniverseSelection
                 return Symbol.Create(ticker, SecurityType.Equity, Market.USA);
             }).Where(s => s != null).ToList();
 
-            Log.Debug($"DollarVolumeUniverseSelectionModel: Selected {symbols.Count} symbols for {tradingDate:yyyy-MM-dd}");
+            Log.Debug($"ClickHouseDollarVolumeUniverseSelectionModel: Selected {symbols.Count} symbols for {tradingDate:yyyy-MM-dd}");
             
             return symbols;
         }
