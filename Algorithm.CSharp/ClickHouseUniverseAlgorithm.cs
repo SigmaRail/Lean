@@ -20,13 +20,13 @@ using QuantConnect.Data.UniverseSelection;
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
-    /// Dual-mode algorithm that works on both local LEAN (with ClickHouse) 
+    /// ClickHouse universe algorithm that works on both local LEAN (with ClickHouse) 
     /// and QuantConnect Cloud (with LEAN's data sources).
     /// 
-    /// The universe automatically detects:
-    /// 1. If running in backtest or live mode
-    /// 2. If ClickHouse is available
-    /// 3. The backtest time period (for caching optimization)
+    /// The universe automatically:
+    /// 1. Detects if ClickHouse is available
+    /// 2. Pre-fetches all universe data during Initialize() for fast time-slice lookups
+    /// 3. Falls back to LEAN data sources if ClickHouse unavailable
     /// 
     /// Configuration (config.json for local LEAN):
     /// {
@@ -37,7 +37,7 @@ namespace QuantConnect.Algorithm.CSharp
     ///   "clickhouse-password": ""
     /// }
     /// </summary>
-    public class DualModeClickHouseAlgorithm : QCAlgorithm
+    public class ClickHouseUniverseAlgorithm : QCAlgorithm
     {
         public override void Initialize()
         {
@@ -47,21 +47,20 @@ namespace QuantConnect.Algorithm.CSharp
 
             UniverseSettings.Resolution = Resolution.Daily;
 
-            // Use dual-mode sector universe
+            // Use ClickHouse sector universe with intelligent caching
             // Works on both:
-            // - Local LEAN with ClickHouse (fast SQL queries)
+            // - Local LEAN with ClickHouse (fast SQL queries with caching)
             // - QuantConnect Cloud (falls back to CoarseFundamental)
-            AddUniverse(new ClickHouseDualModeSectorUniverse(
+            AddUniverse(new ClickHouseSectorUniverse(
                 algorithm: this,
                 sector: "Technology",
                 topN: 20
             ));
 
-            Log($"DualModeClickHouseAlgorithm: Initialized");
-            Log($"  - Live Mode: {LiveMode}");
+            Log($"ClickHouseUniverseAlgorithm: Initialized");
             Log($"  - Start Date: {StartDate:yyyy-MM-dd}");
             Log($"  - End Date: {EndDate:yyyy-MM-dd}");
-            Log($"  - ClickHouse will be auto-detected");
+            Log($"  - ClickHouse will be auto-detected and cached");
 
             // Monthly rebalancing
             Schedule.On(

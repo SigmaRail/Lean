@@ -22,27 +22,26 @@ using QuantConnect.Interfaces;
 namespace QuantConnect.Data.UniverseSelection
 {
     /// <summary>
-    /// Dual-mode sector universe selection that works on both local LEAN (with ClickHouse) 
-    /// and QuantConnect Cloud (with LEAN's data sources).
+    /// Sector universe selection using ClickHouse with intelligent caching.
     /// 
-    /// In backtest mode: Uses cached ClickHouse data or falls back to CoarseFundamental
-    /// In live mode: Queries ClickHouse for each time slice
+    /// Pre-fetches all universe data during Initialize() for O(1) time slice lookups.
+    /// Works on both local LEAN (with ClickHouse) and QuantConnect Cloud (fallback to LEAN data).
     /// </summary>
-    public class ClickHouseDualModeSectorUniverse : Universe
+    public class ClickHouseSectorUniverse : Universe
     {
         private readonly string _sector;
         private readonly int _topN;
-        private readonly ClickHouseDualModeProvider _provider;
+        private readonly ClickHouseUniverseProvider _provider;
         private readonly IAlgorithm _algorithm;
 
         /// <summary>
-        /// Initializes a new instance of the ClickHouseDualModeSectorUniverse
+        /// Initializes a new instance of the ClickHouseSectorUniverse
         /// </summary>
-        /// <param name="algorithm">The algorithm instance (needed for mode detection and fallback)</param>
+        /// <param name="algorithm">The algorithm instance (for date range and fallback)</param>
         /// <param name="sector">Sector name (e.g., "Technology", "Healthcare")</param>
         /// <param name="topN">Number of top stocks to select (default: 20)</param>
         /// <param name="universeSettings">Optional universe settings</param>
-        public ClickHouseDualModeSectorUniverse(
+        public ClickHouseSectorUniverse(
             IAlgorithm algorithm,
             string sector, 
             int topN = 20,
@@ -54,8 +53,8 @@ namespace QuantConnect.Data.UniverseSelection
             _topN = topN;
             UniverseSettings = universeSettings ?? new UniverseSettings(Resolution.Daily, 1, false, false, TimeSpan.FromDays(1));
             
-            // Initialize dual-mode provider (detects backtest/live and ClickHouse availability)
-            _provider = new ClickHouseDualModeProvider(algorithm);
+            // Initialize provider with caching (auto-detects ClickHouse availability)
+            _provider = new ClickHouseUniverseProvider(algorithm);
         }
 
         /// <summary>
@@ -84,7 +83,7 @@ namespace QuantConnect.Data.UniverseSelection
                         return Symbol.Create(ticker, SecurityType.Equity, Market.USA);
                     }).Where(s => s != null).ToList();
 
-                    Log.Debug($"ClickHouseDualModeSectorUniverse: Selected {symbols.Count} symbols from {_sector} sector for {tradingDate:yyyy-MM-dd}");
+                    Log.Debug($"ClickHouseSectorUniverse: Selected {symbols.Count} symbols from {_sector} sector for {tradingDate:yyyy-MM-dd}");
                     return symbols;
                 }
             }

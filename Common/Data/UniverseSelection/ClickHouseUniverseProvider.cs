@@ -25,14 +25,14 @@ using QuantConnect.Interfaces;
 namespace QuantConnect.Data.UniverseSelection
 {
     /// <summary>
-    /// Dual-mode ClickHouse data provider that optimizes for both backtesting and live trading.
+    /// ClickHouse universe data provider with intelligent caching.
     /// 
-    /// In backtest mode: Pre-fetches all universe data for the entire backtest period
-    /// In live mode: Queries ClickHouse for each time slice
+    /// Pre-fetches and caches all universe data for the algorithm's date range
+    /// during initialization for O(1) time slice lookups.
     /// 
     /// Works on both local LEAN (with ClickHouse) and QuantConnect Cloud (with LEAN's data sources)
     /// </summary>
-    public class ClickHouseDualModeProvider
+    public class ClickHouseUniverseProvider
     {
         private readonly string _host;
         private readonly int _port;
@@ -40,9 +40,8 @@ namespace QuantConnect.Data.UniverseSelection
         private readonly string _username;
         private readonly string _password;
         private readonly HttpClient _httpClient;
-        private bool _isLiveMode;
         
-        // Cache for backtest mode: Date -> List of results
+        // Cache: Date -> List of results
         private readonly Dictionary<DateTime, List<Dictionary<string, object>>> _cache;
         private bool _cacheInitialized;
 
@@ -52,15 +51,15 @@ namespace QuantConnect.Data.UniverseSelection
         public bool IsClickHouseAvailable { get; private set; }
 
         /// <summary>
-        /// Initializes a new instance of the ClickHouseDualModeProvider
+        /// Initializes a new instance of the ClickHouseUniverseProvider
         /// </summary>
-        /// <param name="algorithm">The algorithm instance to detect mode and dates</param>
+        /// <param name="algorithm">The algorithm instance to get date range from</param>
         /// <param name="host">ClickHouse server host</param>
         /// <param name="port">ClickHouse HTTP port</param>
         /// <param name="database">Database name</param>
         /// <param name="username">Username</param>
         /// <param name="password">Password</param>
-        public ClickHouseDualModeProvider(
+        public ClickHouseUniverseProvider(
             IAlgorithm algorithm,
             string host = null,
             int? port = null,
@@ -68,7 +67,6 @@ namespace QuantConnect.Data.UniverseSelection
             string username = null,
             string password = null)
         {
-            _isLiveMode = algorithm.LiveMode;
             _cache = new Dictionary<DateTime, List<Dictionary<string, object>>>();
             _cacheInitialized = false;
             _httpClient = new HttpClient();
@@ -85,28 +83,24 @@ namespace QuantConnect.Data.UniverseSelection
             
             if (!IsClickHouseAvailable)
             {
-                Log.Trace("ClickHouseDualModeProvider: ClickHouse not available, falling back to LEAN data sources");
-            }
-            else if (!_isLiveMode)
-            {
-                // Backtest mode: Pre-fetch all universe data for the backtest period
-                Log.Trace($"ClickHouseDualModeProvider: Backtest mode detected ({algorithm.StartDate:yyyy-MM-dd} to {algorithm.EndDate:yyyy-MM-dd}). Pre-fetching universe data...");
-                InitializeCache(algorithm.StartDate, algorithm.EndDate);
+                Log.Trace("ClickHouseUniverseProvider: ClickHouse not available, falling back to LEAN data sources");
             }
             else
             {
-                Log.Trace("ClickHouseDualModeProvider: Live mode detected. Will query ClickHouse for each time slice.");
+                // Pre-fetch all universe data for the algorithm's date range
+                Log.Trace($"ClickHouseUniverseProvider: Caching universe data from {algorithm.StartDate:yyyy-MM-dd} to {algorithm.EndDate:yyyy-MM-dd}...");
+                InitializeCache(algorithm.StartDate, algorithm.EndDate);
             }
         }
 
         /// <summary>
-        /// Gets sector universe for a specific date (uses cache in backtest, queries in live)
+        /// Gets sector universe for a specific date (uses cache)
         /// </summary>
         public List<Dictionary<string, object>> GetSectorUniverse(DateTime date, string sector, int topN = 20)
         {
-            if (IsClickHouseAvailable && !_isLiveMode && _cacheInitialized)
+            if (IsClickHouseAvailable && _cacheInitialized)
             {
-                // Backtest mode with cache: Filter from cached data
+                // Use cached data
                 return GetFromCache(date, row => 
                     row.ContainsKey("sector") && 
                     row["sector"]?.ToString() == sector, 
@@ -115,7 +109,7 @@ namespace QuantConnect.Data.UniverseSelection
             
             if (IsClickHouseAvailable)
             {
-                // Live mode or cache miss: Query ClickHouse
+                // Query ClickHouse directly (for dates not in cache)
                 return QuerySectorFromClickHouse(date, sector, topN);
             }
             
@@ -128,7 +122,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// </summary>
         public List<Dictionary<string, object>> GetIndustryUniverse(DateTime date, string industry, int topN = 10)
         {
-            if (IsClickHouseAvailable && !_isLiveMode && _cacheInitialized)
+            if (IsClickHouseAvailable && _cacheInitialized)
             {
                 return GetFromCache(date, row => 
                     row.ContainsKey("industry") && 
@@ -149,7 +143,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// </summary>
         public List<Dictionary<string, object>> GetDollarVolumeUniverse(DateTime date, int topN = 100)
         {
-            if (IsClickHouseAvailable && !_isLiveMode && _cacheInitialized)
+            if (IsClickHouseAvailable && _cacheInitialized)
             {
                 return GetFromCache(date, row => true, topN); // All cached entries are already filtered by dollar_volume_rank
             }
