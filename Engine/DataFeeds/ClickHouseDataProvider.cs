@@ -279,7 +279,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private static bool IsSupportedKey(string key)
         {
             var k = key.Replace('\\', '/').ToLowerInvariant();
-            return k.StartsWith("equity/usa/daily/") && k.EndsWith(".zip");
+            // Support both "equity/usa/daily/*.zip" and "data/equity/usa/daily/*.zip"
+            return (k.StartsWith("equity/usa/daily/") || k.StartsWith("data/equity/usa/daily/")) && k.EndsWith(".zip");
         }
 
         private static string NormalizeKey(string key)
