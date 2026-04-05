@@ -21,12 +21,12 @@ echo "✅ LEAN build complete"
 # Get git commit hash for tagging
 GIT_HASH=$(git rev-parse --short HEAD)
 
-echo "🐳 Building Docker image for multiple platforms..."
-# Create and use buildx builder for multi-platform builds
+echo "🐳 Building Docker image for AMD64 (GitHub Actions)..."
+# Use buildx for AMD64 platform
 docker buildx create --name lean-builder --use 2>/dev/null || docker buildx use lean-builder
 
 docker buildx build \
-  --platform linux/amd64,linux/arm64 \
+  --platform linux/amd64 \
   -t ghcr.io/mdiggory/lean-clickhouse:latest \
   -t ghcr.io/mdiggory/lean-clickhouse:${GIT_HASH} \
   --push \
@@ -34,10 +34,8 @@ docker buildx build \
 
 echo "✅ Docker image built and pushed successfully"
 echo ""
-echo "📦 Image tags (available for both linux/amd64 and linux/arm64):"
+echo "📦 Image tags (linux/amd64 for GitHub Actions):"
 echo "  - ghcr.io/mdiggory/lean-clickhouse:latest"
 echo "  - ghcr.io/mdiggory/lean-clickhouse:${GIT_HASH}"
 echo ""
-echo "Images are now available on GitHub Container Registry for:"
-echo "  ✓ GitHub Actions (linux/amd64)"
-echo "  ✓ Apple Silicon Macs (linux/arm64)"
+echo "Image is now available on GitHub Container Registry for GitHub Actions"

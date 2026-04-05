@@ -44,13 +44,13 @@ namespace QuantConnect.Algorithm.CSharp
             UniverseSettings.Resolution = Resolution.Daily;
 
             // Example 1: Dollar Volume Universe (Top 100 by dollar volume)
-            // AddUniverse(new DollarVolumeUniverseSelectionModel(topN: 100));
+            // AddUniverse(new ClickHouseDollarVolumeUniverseSelectionModel(topN: 100));
 
             // Example 2: Sector Universe (Top 20 Technology stocks)
-            // AddUniverse(new SectorUniverseSelectionModel(sector: "Technology", topN: 20));
+            // AddUniverse(new ClickHouseSectorUniverseSelectionModel(sector: "Technology", topN: 20));
 
             // Example 3: Industry Universe (Top 10 Software stocks)
-            AddUniverse(new IndustryUniverseSelectionModel(industry: "Software - Application", topN: 10));
+            AddUniverse(new ClickHouseIndustryUniverseSelectionModel(industry: "Software - Application", topN: 10));
 
             // Scheduled rebalancing
             Schedule.On(

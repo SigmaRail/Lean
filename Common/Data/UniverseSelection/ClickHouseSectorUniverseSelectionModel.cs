@@ -26,19 +26,19 @@ namespace QuantConnect.Data.UniverseSelection
     /// Selects top N stocks from a specific sector ordered by dollar volume.
     /// Queries ClickHouse database directly via HTTP for fast universe selection.
     /// </summary>
-    public class SectorUniverseSelectionModel : Universe
+    public class ClickHouseSectorUniverseSelectionModel : Universe
     {
         private readonly string _sector;
         private readonly int _topN;
         private readonly ClickHouseDataProvider _provider;
 
         /// <summary>
-        /// Initializes a new instance of the SectorUniverseSelectionModel
+        /// Initializes a new instance of the ClickHouseSectorUniverseSelectionModel
         /// </summary>
         /// <param name="sector">Sector name (e.g., "Technology", "Healthcare")</param>
         /// <param name="topN">Number of top stocks to select (default: 20)</param>
         /// <param name="universeSettings">Optional universe settings</param>
-        public SectorUniverseSelectionModel(
+        public ClickHouseSectorUniverseSelectionModel(
             string sector, 
             int topN = 20,
             UniverseSettings universeSettings = null)
@@ -76,7 +76,7 @@ namespace QuantConnect.Data.UniverseSelection
             
             if (results == null || results.Count == 0)
             {
-                Log.Debug($"SectorUniverseSelectionModel: No data for {tradingDate:yyyy-MM-dd} sector {_sector}");
+                Log.Debug($"ClickHouseSectorUniverseSelectionModel: No data for {tradingDate:yyyy-MM-dd} sector {_sector}");
                 return Enumerable.Empty<Symbol>();
             }
 
@@ -92,7 +92,7 @@ namespace QuantConnect.Data.UniverseSelection
                 return Symbol.Create(ticker, SecurityType.Equity, Market.USA);
             }).Where(s => s != null).ToList();
 
-            Log.Debug($"SectorUniverseSelectionModel: Selected {symbols.Count} symbols from {_sector} sector for {tradingDate:yyyy-MM-dd}");
+            Log.Debug($"ClickHouseSectorUniverseSelectionModel: Selected {symbols.Count} symbols from {_sector} sector for {tradingDate:yyyy-MM-dd}");
             
             return symbols;
         }
