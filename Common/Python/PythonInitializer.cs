@@ -82,9 +82,10 @@ namespace QuantConnect.Python
 
                 try
                 {
-                    var pyLock = Py.GIL();
-                    Log.Trace($"PythonInitializer.Shutdown(): calling engine shutdown...");
-                    PythonEngine.Shutdown();
+                    // Skip PythonEngine.Shutdown() to avoid GIL finalization errors
+                    // The process is exiting anyway, so Python cleanup will happen automatically
+                    // This prevents the "GIL must always be released" error that causes container hangs
+                    Log.Trace("PythonInitializer.Shutdown(): Skipping PythonEngine.Shutdown() to prevent GIL errors");
                 }
                 catch (Exception ex)
                 {
