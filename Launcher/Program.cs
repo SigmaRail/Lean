@@ -79,7 +79,7 @@ namespace QuantConnect.Lean.Launcher
             if (!string.IsNullOrWhiteSpace(compositeProviders))
             {
                 Config.Set("data-provider", "QuantConnect.Lean.Engine.DataFeeds.CompositeDataProvider");
-                Config.Set("backtesting.data-provider", "QuantConnect.Lean.Engine.DataFeeds.CompositeDataProvider");
+                // Config.Set("backtesting.data-provider", "QuantConnect.Lean.Engine.DataFeeds.CompositeDataProvider"); // Causes NullReferenceException with dotted key
             }
             leanEngineAlgorithmHandlers = Initializer.GetAlgorithmHandlers();
 
