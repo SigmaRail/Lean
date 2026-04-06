@@ -16,15 +16,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Python.Runtime;
+using QuantConnect.Interfaces;
 
 namespace QuantConnect.Data.UniverseSelection
 {
     /// <summary>
-    /// Dollar volume based universe selection using ClickHouse data.
+    /// Dollar volume based universe selection using ClickHouse data with intelligent caching.
     /// 
     /// Selects top N stocks by dollar volume, similar to CoarseFundamentalUniverse
-    /// but queries ClickHouse directly for faster performance.
+    /// but queries ClickHouse directly with pre-fetched data for O(1) lookups.
     /// </summary>
     public class ClickHouseDollarVolumeUniverseSelectionModel : Universe
     {
@@ -32,11 +32,13 @@ namespace QuantConnect.Data.UniverseSelection
         private readonly ClickHouseDataProvider _provider;
 
         /// <summary>
-        /// Initializes a new instance of the ClickHouseDollarVolumeUniverseSelectionModel
+        /// Initializes a new instance of the ClickHouseDollarVolumeUniverseSelectionModel with caching
         /// </summary>
+        /// <param name="algorithm">The algorithm instance to get StartDate/EndDate for caching</param>
         /// <param name="topN">Number of top stocks by dollar volume to select (default: 100)</param>
         /// <param name="universeSettings">Optional universe settings</param>
         public ClickHouseDollarVolumeUniverseSelectionModel(
+            IAlgorithm algorithm,
             int topN = 100,
             UniverseSettings universeSettings = null)
             : base(CreateConfiguration(FundamentalUniverseFactory.SymbolFactory.UniverseSymbol()))
@@ -44,14 +46,8 @@ namespace QuantConnect.Data.UniverseSelection
             _topN = topN;
             UniverseSettings = universeSettings ?? new UniverseSettings(Resolution.Daily, 1, false, false, TimeSpan.FromDays(1));
             
-            // Initialize ClickHouse provider with default settings
-            var host = Config.Get("clickhouse-host", "localhost");
-            var port = Config.GetInt("clickhouse-port", 8123);
-            var database = Config.Get("clickhouse-database", "vera");
-            var username = Config.Get("clickhouse-username", "default");
-            var password = Config.Get("clickhouse-password", "");
-            
-            _provider = new ClickHouseDataProvider(host, port, database, username, password);
+            // Initialize ClickHouse provider with algorithm for caching
+            _provider = new ClickHouseDataProvider(algorithm);
         }
 
         /// <summary>
