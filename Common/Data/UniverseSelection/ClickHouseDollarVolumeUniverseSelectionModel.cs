@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Interfaces;
+using QuantConnect.Logging;
 
 namespace QuantConnect.Data.UniverseSelection
 {
@@ -29,7 +30,7 @@ namespace QuantConnect.Data.UniverseSelection
     public class ClickHouseDollarVolumeUniverseSelectionModel : Universe
     {
         private readonly int _topN;
-        private readonly ClickHouseDataProvider _provider;
+        private readonly ClickHouseUniverseSelectionProvider _provider;
 
         /// <summary>
         /// Initializes a new instance of the ClickHouseDollarVolumeUniverseSelectionModel with caching
@@ -47,7 +48,7 @@ namespace QuantConnect.Data.UniverseSelection
             UniverseSettings = universeSettings ?? new UniverseSettings(Resolution.Daily, 1, false, false, TimeSpan.FromDays(1));
             
             // Initialize ClickHouse provider with algorithm for caching
-            _provider = new ClickHouseDataProvider(algorithm);
+            _provider = new ClickHouseUniverseSelectionProvider(algorithm);
         }
 
         /// <summary>
@@ -80,7 +81,7 @@ namespace QuantConnect.Data.UniverseSelection
                     return null;
                 }
                 
-                return Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+                return Symbol.Create(ticker, SecurityType.Equity, QuantConnect.Market.USA);
             }).Where(s => s != null).ToList();
 
             Log.Debug($"ClickHouseDollarVolumeUniverseSelectionModel: Selected {symbols.Count} symbols for {tradingDate:yyyy-MM-dd}");

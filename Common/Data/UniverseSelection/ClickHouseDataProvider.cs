@@ -27,13 +27,14 @@ using QuantConnect.Interfaces;
 namespace QuantConnect.Data.UniverseSelection
 {
     /// <summary>
-    /// Data provider for querying ClickHouse database directly from LEAN.
-    /// Makes HTTP requests to ClickHouse HTTP interface for universe selection.
+    /// Universe selection provider for querying ClickHouse directly from LEAN.
+    /// Makes HTTP requests to the ClickHouse HTTP interface to screen tickers
+    /// by fundamental and liquidity criteria before the bar data provider is used.
     /// 
     /// Supports intelligent caching: when initialized with a date range, pre-fetches
     /// all universe data for O(1) time-slice lookups during backtests or live trading.
     /// </summary>
-    public class ClickHouseDataProvider
+    public class ClickHouseUniverseSelectionProvider
     {
         private readonly string _host;
         private readonly int _port;
@@ -52,7 +53,7 @@ namespace QuantConnect.Data.UniverseSelection
         public bool IsCacheInitialized => _cacheInitialized;
 
         /// <summary>
-        /// Initializes a new instance of the ClickHouseDataProvider with connection parameters only
+        /// Initializes a new instance of the ClickHouseUniverseSelectionProvider with connection parameters only
         /// (no caching - queries ClickHouse on every call)
         /// </summary>
         /// <param name="host">ClickHouse server host (default: localhost)</param>
@@ -60,7 +61,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// <param name="database">Database name (default: vera)</param>
         /// <param name="username">Username (default: default)</param>
         /// <param name="password">Password (optional)</param>
-        public ClickHouseDataProvider(
+        public ClickHouseUniverseSelectionProvider(
             string host = "localhost",
             int port = 8123,
             string database = "vera",
@@ -78,7 +79,7 @@ namespace QuantConnect.Data.UniverseSelection
         }
 
         /// <summary>
-        /// Initializes a new instance of the ClickHouseDataProvider with algorithm for caching
+        /// Initializes a new instance of the ClickHouseUniverseSelectionProvider with algorithm for caching
         /// (pre-fetches all data for StartDate to EndDate during initialization)
         /// </summary>
         /// <param name="algorithm">The algorithm to get StartDate/EndDate from</param>
@@ -87,7 +88,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// <param name="database">Database name (default: vera)</param>
         /// <param name="username">Username (default: default)</param>
         /// <param name="password">Password (optional)</param>
-        public ClickHouseDataProvider(
+        public ClickHouseUniverseSelectionProvider(
             IAlgorithm algorithm,
             string host = "localhost",
             int port = 8123,
@@ -97,7 +98,7 @@ namespace QuantConnect.Data.UniverseSelection
             : this(host, port, database, username, password)
         {
             // Pre-fetch all data for the algorithm's date range
-            Log.Trace($"ClickHouseDataProvider: Pre-fetching universe data from {algorithm.StartDate:yyyy-MM-dd} to {algorithm.EndDate:yyyy-MM-dd}...");
+            Log.Trace($"ClickHouseUniverseSelectionProvider: Pre-fetching universe data from {algorithm.StartDate:yyyy-MM-dd} to {algorithm.EndDate:yyyy-MM-dd}...");
             LoadCache(algorithm.StartDate, algorithm.EndDate);
         }
 
@@ -112,7 +113,7 @@ namespace QuantConnect.Data.UniverseSelection
             {
                 _cache.Clear();
                 
-                // Query all trading days at once
+                // Query all trading days at once - store ALL stocks, filter later
                 var query = $@"
                     SELECT date, ticker, close, volume, dollar_volume, pe_ratio, pb_ratio, 
                            marketcap, sector, industry, dollar_volume_rank
@@ -121,7 +122,7 @@ namespace QuantConnect.Data.UniverseSelection
                       AND date <= '{endDate:yyyy-MM-dd}'
                       AND close > 0
                       AND volume > 0
-                    ORDER BY date, dollar_volume_rank
+                    ORDER BY date, ticker
                     FORMAT JSONEachRow";
 
                 var results = ExecuteQuery(query);
@@ -141,11 +142,11 @@ namespace QuantConnect.Data.UniverseSelection
                 }
                 
                 _cacheInitialized = true;
-                Log.Trace($"ClickHouseDataProvider: Cached data for {_cache.Count} dates, {results.Count} total rows");
+                Log.Trace($"ClickHouseUniverseSelectionProvider: Cached data for {_cache.Count} dates, {results.Count} total rows");
             }
             catch (Exception ex)
             {
-                Log.Error($"ClickHouseDataProvider: Failed to load cache: {ex.Message}");
+                Log.Error($"ClickHouseUniverseSelectionProvider: Failed to load cache: {ex.Message}");
                 _cacheInitialized = false;
             }
         }

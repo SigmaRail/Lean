@@ -16,7 +16,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Python.Runtime;
+using QuantConnect.Configuration;
+using QuantConnect.Logging;
 
 namespace QuantConnect.Data.UniverseSelection
 {
@@ -31,7 +32,7 @@ namespace QuantConnect.Data.UniverseSelection
     {
         private readonly string _industry;
         private readonly int _topN;
-        private readonly ClickHouseDataProvider _provider;
+        private readonly ClickHouseUniverseSelectionProvider _provider;
 
         /// <summary>
         /// Initializes a new instance of the ClickHouseIndustryUniverseSelectionModel
@@ -57,7 +58,7 @@ namespace QuantConnect.Data.UniverseSelection
             var username = Config.Get("clickhouse-username", "default");
             var password = Config.Get("clickhouse-password", "");
             
-            _provider = new ClickHouseDataProvider(host, port, database, username, password);
+            _provider = new ClickHouseUniverseSelectionProvider(host, port, database, username, password);
         }
 
         /// <summary>
@@ -90,7 +91,7 @@ namespace QuantConnect.Data.UniverseSelection
                     return null;
                 }
                 
-                return Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+                return Symbol.Create(ticker, SecurityType.Equity, QuantConnect.Market.USA);
             }).Where(s => s != null).ToList();
 
             Log.Debug($"ClickHouseIndustryUniverseSelectionModel: Selected {symbols.Count} symbols from {_industry} industry for {tradingDate:yyyy-MM-dd}");

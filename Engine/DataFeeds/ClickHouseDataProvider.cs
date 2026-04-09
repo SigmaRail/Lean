@@ -95,25 +95,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             if (!IsSupportedKey(normalizedKey))
             {
-                if (_trace)
-                {
-                    Log.Trace($"ClickHouseDataProvider.Fetch(): key not supported: '{normalizedKey}'");
-                }
                 return null;
             }
 
             if (_zipBytesCache.TryGetValue(normalizedKey, out var cached))
             {
-                if (_trace)
-                {
-                    Log.Trace($"ClickHouseDataProvider.Fetch(): returning cached data for '{normalizedKey}'");
-                }
                 return new MemoryStream(cached, writable: false);
-            }
-
-            if (_trace)
-            {
-                Log.Trace($"ClickHouseDataProvider.Fetch(): calling DownloadOnce for '{normalizedKey}'");
             }
 
             return DownloadOnce(normalizedKey, BuildAndOptionallyPersist);
@@ -206,11 +193,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
         private void BuildAndOptionallyPersist(string key)
         {
-            if (_trace)
-            {
-                Log.Trace($"ClickHouseDataProvider.BuildAndOptionallyPersist(): START key='{key}'");
-            }
-
             if (string.IsNullOrEmpty(_database))
             {
                 throw new InvalidOperationException("ClickHouseDataProvider requires 'clickhouse-database' config to be set");
@@ -225,22 +207,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
 
             var db = QueryDbMaxes(ticker, range.Start, range.End);
-            if (_trace)
-            {
-                Log.Trace($"ClickHouseDataProvider.Build(): QueryDbMaxes returned maxDate={db.DbMaxDate:yyyy-MM-dd} lastUpdated={db.DbLastUpdated:o}");
-            }
-
             var bars = QueryDailyBars(ticker, range.Start, range.End);
-            if (_trace)
-            {
-                Log.Trace($"ClickHouseDataProvider.Build(): QueryDailyBars returned {bars.Count} bars");
-            }
-
             var zipBytes = BuildDailyEquityZipBytes(ticker, bars);
-            if (_trace)
-            {
-                Log.Trace($"ClickHouseDataProvider.Build(): Built zip with {zipBytes.Length} bytes");
-            }
 
             _zipBytesCache[key] = zipBytes;
 
@@ -279,8 +247,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private static bool IsSupportedKey(string key)
         {
             var k = key.Replace('\\', '/').ToLowerInvariant();
-            // Support both "equity/usa/daily/*.zip" and "data/equity/usa/daily/*.zip"
-            return (k.StartsWith("equity/usa/daily/") || k.StartsWith("data/equity/usa/daily/")) && k.EndsWith(".zip");
+            return k.StartsWith("equity/usa/daily/") && k.EndsWith(".zip");
         }
 
         private static string NormalizeKey(string key)

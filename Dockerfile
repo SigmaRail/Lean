@@ -8,7 +8,10 @@ FROM quantconnect/lean:foundation
 
 MAINTAINER mdiggory
 
+ARG LEAN_VERSION=custom
+
 LABEL description="Custom LEAN engine with ClickHouseDataProvider for ClickHouse data integration"
+LABEL lean_version=${LEAN_VERSION}
 
 # Install debugpy and PyDevD for remote python debugging
 RUN pip install --no-cache-dir ptvsd==4.3.2 debugpy~=1.6.7 pydevd-pycharm~=231.9225.15
@@ -30,7 +33,11 @@ COPY ./Optimizer.Launcher/bin/Release/ /Lean/Optimizer.Launcher/bin/Release/
 COPY ./Report/bin/Release/ /Lean/Report/bin/Release/
 COPY ./DownloaderDataProvider/bin/Release/ /Lean/DownloaderDataProvider/bin/Release/
 
+# Lean CLI mounts config into /Lean/Launcher/bin/Debug/config.json
+# Make Debug resolve to Release so CLI-injected config is honored
+RUN ln -sfn /Lean/Launcher/bin/Release /Lean/Launcher/bin/Debug
+
 # Can override with '-w'
-WORKDIR /Lean/Launcher/bin/Release
+WORKDIR /Lean/Launcher/bin/Debug
 
 ENTRYPOINT [ "dotnet", "QuantConnect.Lean.Launcher.dll" ]
