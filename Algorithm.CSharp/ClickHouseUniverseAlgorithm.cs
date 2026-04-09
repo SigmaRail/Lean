@@ -15,7 +15,9 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using QuantConnect.Data;
 using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Orders;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -51,7 +53,7 @@ namespace QuantConnect.Algorithm.CSharp
             // Works on both:
             // - Local LEAN with ClickHouse (fast SQL queries with caching)
             // - QuantConnect Cloud (falls back to CoarseFundamental)
-            AddUniverse(new ClickHouseSectorUniverse(
+            AddUniverse(new ClickHouseSectorUniverseSelectionModel(
                 algorithm: this,
                 sector: "Technology",
                 topN: 20
