@@ -64,6 +64,20 @@ This file applies to everything under `Lean/`.
 2. Build Docker image (`lean-local:latest`) if runtime/binary files changed.
 3. Run one smoke backtest via `lean` using the target image.
 
+### Foundation image — Pydantic (StrategyIR)
+
+`Dockerfile` uses **`FROM quantconnect/lean:foundation`** (floating tag). The upstream image ships **Pydantic v2** for Python algorithms; VeraTradingLab `StrategyIR` expects **`pydantic>=2.7,<3`** (no separate `pip install` in our Dockerfile).
+
+| Check | Command / note |
+|-------|----------------|
+| Quick check | `docker run --rm quantconnect/lean:foundation python3 -c "import pydantic; print(pydantic.__version__)"` — expect **2.x** |
+| Multi-arch | Pull/run on **linux/arm64** and **linux/amd64** before relying on a new foundation release (GitHub-hosted CI is usually amd64). |
+| If Pydantic missing or wrong major | Restore a `RUN pip install --no-cache-dir "pydantic>=2.7,<3"` line in `Dockerfile` and update this table. |
+
+**Recorded verification (workspace, not a guarantee for every future digest):**
+
+- **2026-04-11** — `quantconnect/lean:foundation` digest `sha256:6e4fd9b135b8d5c10bad3f8ccde5c54c4d4252a5772963e185a0076f78cb58e8`, **linux/arm64**: Pydantic **2.12.5**.
+
 ## Git Workflow Notes
 
 - Treat upstream mirror branch as clean and keep custom changes on `custom/*` or feature branches.
