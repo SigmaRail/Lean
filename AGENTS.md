@@ -8,7 +8,7 @@ This file applies to everything under `Lean/`.
 
 - This repo is a customized LEAN engine fork used for local and CI backtesting.
 - It includes custom ClickHouse integration and a local Docker image workflow.
-- Git remotes, **`master` vs `vera/master`**, and VeraTradingLab image integration: **`VERA_CUSTOMIZATIONS.md`**.
+- Git remotes, **`master` vs `vera/master`**, and VeraLab / strategy-repo image integration: **`VERA_CUSTOMIZATIONS.md`**.
 
 ## Critical Architecture Rules
 
@@ -65,9 +65,9 @@ This file applies to everything under `Lean/`.
 2. Build Docker image (`lean-local:latest`) if runtime/binary files changed.
 3. Run one smoke backtest via `lean` using the target image.
 
-### Foundation image — Pydantic (StrategyIR)
+### Foundation image — Pydantic (VeraLab JSON)
 
-`Dockerfile` uses **`FROM quantconnect/lean:foundation`** (floating tag). The upstream image ships **Pydantic v2** for Python algorithms; VeraTradingLab `StrategyIR` expects **`pydantic>=2.7,<3`** (no separate `pip install` in our Dockerfile).
+`Dockerfile` uses **`FROM quantconnect/lean:foundation`** (floating tag). The upstream image ships **Pydantic v2** for Python algorithms; the strategy repo’s **`VeraLab`** model (`vera_lab` package) expects **`pydantic>=2.7,<3`** (no separate `pip install` in our Dockerfile).
 
 | Check | Command / note |
 |-------|----------------|

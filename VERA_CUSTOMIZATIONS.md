@@ -1,6 +1,6 @@
 # Vera fork: customizations and git workflow
 
-This fork adds **ClickHouse-backed data and universe selection**, **Docker image build/publish**, a **Python.NET shutdown workaround**, and **launcher wiring** so job parameters and `CompositeDataProvider` work with the Lean CLI. Architectural rules and file-level pointers live in **`AGENTS.md`**; this document focuses on **git layout**, **updating from QuantConnect**, and **how VeraTradingLab consumes the image**.
+This fork adds **ClickHouse-backed data and universe selection**, **Docker image build/publish**, a **Python.NET shutdown workaround**, and **launcher wiring** so job parameters and `CompositeDataProvider` work with the Lean CLI. Architectural rules and file-level pointers live in **`AGENTS.md`**; this document focuses on **git layout**, **updating from QuantConnect**, and **how the `VeraTradingLab/` strategy repository consumes the image** (Python algorithm JSON validated as **VeraLab** / `vera_lab`).
 
 ## Repository layout
 
@@ -33,7 +33,7 @@ Details and verification steps: **`AGENTS.md`**.
 ## Docker images
 
 - **Local tag:** build per **`AGENTS.md`** (e.g. `lean-local:latest` and optional commit tag).
-- **Published (VeraTradingLab CI):** `ghcr.io/mdiggory/lean-clickhouse` tags such as **`latest`** (amd64) and **`arm64-latest`** — see **`LeanProjects/VeraTradingLab`** workflow and README.
+- **Published (strategy-repo CI):** `ghcr.io/mdiggory/lean-clickhouse` tags such as **`latest`** (amd64) and **`arm64-latest`** — see **`LeanProjects/VeraTradingLab/`** workflow and README.
 
 Rebuild the image after changing **`vera/master`** engine or provider code; the **`Dockerfile`** expects **pre-built `Release`** binaries copied into the image.
 
@@ -77,12 +77,12 @@ Expect to re-validate after each upstream bump:
 
 ## Launcher config vs job parameters
 
-- **Lean CLI / local platform:** ClickHouse connection and backtest window often come from **`config.json`** / **`lean.json`** and project config; see VeraTradingLab **`docker.environment`** and **`--extra-docker-config`**.
+- **Lean CLI / local platform:** ClickHouse connection and backtest window often come from **`config.json`** / **`lean.json`** and project config; see **`LeanProjects/VeraTradingLab/config.json`** **`docker.environment`** and **`--extra-docker-config`**.
 - **Non–local-platform jobs:** **`ApplyJobParametersToConfig`** maps algorithm job parameters into **`clickhouse-*`** keys (with aliases such as **`vera-host`**) so cloud-style job packets can drive the same provider stack.
 
 If you change this mapping, update **`AGENTS.md`** or **`VERA_CUSTOMIZATIONS.md`** in the same PR.
 
-## VeraTradingLab integration
+## Strategy repo integration (`LeanProjects/VeraTradingLab/`)
 
 - Workflows under **`LeanProjects/VeraTradingLab/.github/workflows/`** pull **`ghcr.io/mdiggory/lean-clickhouse`** (not a local `lean-local` tag on GitHub-hosted runners).
 - Self-hosted runners may use **arm64** images; GitHub-hosted **ubuntu** jobs typically use **amd64** **`latest`**.
@@ -108,7 +108,7 @@ ClickHouse-specific code is unlikely to be upstreamed as-is; treat it as fork-on
 | Symptom | Things to check |
 |--------|-------------------|
 | Container hangs after Python backtest | GIL workaround present in **`PythonInitializer.cs`**; image built from current **`vera/master`**. |
-| No ClickHouse data | **`composite-data-providers`**, **`clickhouse-host`**, credentials, and backtest date keys; VeraTradingLab env in container. |
+| No ClickHouse data | **`composite-data-providers`**, **`clickhouse-host`**, credentials, and backtest date keys; **`VERA_LAB_*`** + **`CLICKHOUSE_*`** env in container when using the strategy repo. |
 | Merge/rebase conflicts | **`git status`**; preserve **`vera/master`** semantics in launcher and providers, then rebuild. |
 | Wrong engine in CI | Image tag in workflow; digest/tag date; rebuild and push **`ghcr.io/mdiggory/lean-clickhouse`**. |
 
