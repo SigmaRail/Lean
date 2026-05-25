@@ -16,7 +16,7 @@ LABEL lean_version=${LEAN_VERSION}
 # Install debugpy and PyDevD for remote python debugging
 RUN pip install --no-cache-dir ptvsd==4.3.2 debugpy~=1.6.7 pydevd-pycharm~=231.9225.15
 
-# Pydantic v2 for StrategyIR (VeraTradingLab) is already installed on quantconnect/lean:foundation.
+# Pydantic v2 for VeraLab algorithm JSON is already installed on quantconnect/lean:foundation.
 # Re-verify after foundation tag moves: see Lean/AGENTS.md (Foundation image — Pydantic).
 
 # Install vsdbg for remote C# debugging in Visual Studio and Visual Studio Code
