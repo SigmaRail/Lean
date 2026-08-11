@@ -259,7 +259,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             // LEAN sometimes requests keys with a leading '/', but FileExtension.ToNormalizedPath
             // treats such paths as absolute. We always want paths relative to Globals.DataFolder.
-            return key.TrimStart('/', '\\');
+            key = key.TrimStart('/', '\\').Replace('\\', '/');
+
+            // Docker Lean CLI mounts often prefix requests with Lean/Data/ or Data/.
+            foreach (var prefix in new[] { "Lean/Data/", "Data/" })
+            {
+                if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    key = key.Substring(prefix.Length);
+                    break;
+                }
+            }
+
+            return key;
         }
 
         private static string ParseTickerFromKey(string key)
