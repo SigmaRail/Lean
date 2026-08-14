@@ -21,7 +21,7 @@ That job belongs to:
 
 ## Intended flow
 
-1. The universe provider queries `daily_screener` for the current trading date.
+1. The universe provider queries L7 `screener_price_tech_daily` (joined to Sharadar `daily` for P/E and market cap) for the current trading date.
 2. It selects the candidate tickers using fundamental criteria.
 3. LEAN then requests bar data for those symbols through the engine data-feed layer.
 4. The engine-side ClickHouse provider can materialize the daily equity zip files on demand.

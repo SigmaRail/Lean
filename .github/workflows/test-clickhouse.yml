@@ -38,12 +38,12 @@ jobs:
       - name: Test ClickHouse query
         run: |
           RESULT=$(curl -s -u $CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD \
-            "http://$CLICKHOUSE_HOST:$CLICKHOUSE_PORT/?query=SELECT%20count()%20FROM%20$CLICKHOUSE_DATABASE.daily_screener")
-          echo "Daily screener rows: $RESULT"
+            "http://$CLICKHOUSE_HOST:$CLICKHOUSE_PORT/?query=SELECT%20count()%20FROM%20$CLICKHOUSE_DATABASE.screener_price_tech_daily")
+          echo "L7 price/tech rows: $RESULT"
           if [ "$RESULT" -gt 0 ]; then
             echo "✅ ClickHouse data accessible"
           else
-            echo "❌ No data in daily_screener"
+            echo "❌ No data in screener_price_tech_daily"
             exit 1
           fi
       

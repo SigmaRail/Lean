@@ -294,7 +294,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 SELECT
                     max(toDate(date)) AS max_date,
                     max(lastupdated) AS max_lastupdated
-                FROM daily_screener
+                FROM screener_price_tech_daily FINAL
                 WHERE ticker = '{ticker}'
                   AND date BETWEEN toDate('{start:yyyy-MM-dd}') AND toDate('{end:yyyy-MM-dd}')
                 FORMAT JSONEachRow
@@ -336,12 +336,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             var sql = $@"
                 SELECT
                     toDate(date) AS date,
-                    ifNull(`dm.open`, close) AS open,
-                    ifNull(`dm.high`, close) AS high,
-                    ifNull(`dm.low`, close) AS low,
+                    ifNull(open, close) AS open,
+                    ifNull(high, close) AS high,
+                    ifNull(low, close) AS low,
                     ifNull(close, 0) AS close,
                     ifNull(volume, 0) AS volume
-                FROM daily_screener
+                FROM screener_price_tech_daily FINAL
                 WHERE ticker = '{ticker}'
                   AND date BETWEEN toDate('{start:yyyy-MM-dd}') AND toDate('{end:yyyy-MM-dd}')
                   AND close IS NOT NULL

@@ -102,6 +102,23 @@ namespace QuantConnect.Data.UniverseSelection
             LoadCache(algorithm.StartDate, algorithm.EndDate);
         }
 
+        private const string UniverseFrom = @"
+                    screener_price_tech_daily AS px FINAL
+                    LEFT ANY JOIN daily AS d FINAL
+                      ON px.ticker = d.ticker AND px.date = d.date";
+
+        private const string UniverseSelect = @"
+                    px.date AS date,
+                    px.ticker AS ticker,
+                    px.close AS close,
+                    px.volume AS volume,
+                    (px.close * px.volume) AS dollar_volume,
+                    d.pe AS pe_ratio,
+                    d.pb AS pb_ratio,
+                    d.marketcap AS marketcap,
+                    px.sector AS sector,
+                    px.industry AS industry";
+
         /// <summary>
         /// Load cache with all universe data for the specified date range
         /// </summary>
@@ -115,14 +132,13 @@ namespace QuantConnect.Data.UniverseSelection
                 
                 // Query all trading days at once - store ALL stocks, filter later
                 var query = $@"
-                    SELECT date, ticker, close, volume, dollar_volume, pe_ratio, pb_ratio, 
-                           marketcap, sector, industry, dollar_volume_rank
-                    FROM daily_screener FINAL
-                    WHERE date >= '{startDate:yyyy-MM-dd}'
-                      AND date <= '{endDate:yyyy-MM-dd}'
-                      AND close > 0
-                      AND volume > 0
-                    ORDER BY date, ticker
+                    SELECT {UniverseSelect}
+                    FROM {UniverseFrom}
+                    WHERE px.date >= '{startDate:yyyy-MM-dd}'
+                      AND px.date <= '{endDate:yyyy-MM-dd}'
+                      AND px.close > 0
+                      AND px.volume > 0
+                    ORDER BY px.date, dollar_volume DESC
                     FORMAT JSONEachRow";
 
                 var results = ExecuteQuery(query);
@@ -170,14 +186,13 @@ namespace QuantConnect.Data.UniverseSelection
             
             // Query ClickHouse directly
             var query = $@"
-                SELECT ticker, close, volume, dollar_volume, pe_ratio, pb_ratio, 
-                       marketcap, sector, industry, dollar_volume_rank
-                FROM daily_screener FINAL
-                WHERE date = '{date:yyyy-MM-dd}'
-                  AND close > 0
-                  AND volume > 0
-                  AND dollar_volume_rank <= {topN}
-                ORDER BY dollar_volume_rank
+                SELECT {UniverseSelect}
+                FROM {UniverseFrom}
+                WHERE px.date = '{date:yyyy-MM-dd}'
+                  AND px.close > 0
+                  AND px.volume > 0
+                ORDER BY dollar_volume DESC
+                LIMIT {topN}
                 FORMAT JSONEachRow";
 
             return ExecuteQuery(query);
@@ -204,14 +219,13 @@ namespace QuantConnect.Data.UniverseSelection
             
             // Query ClickHouse directly
             var query = $@"
-                SELECT ticker, close, volume, dollar_volume, pe_ratio, pb_ratio,
-                       marketcap, sector, industry, dollar_volume_rank
-                FROM daily_screener FINAL
-                WHERE date = '{date:yyyy-MM-dd}'
-                  AND close > 0
-                  AND volume > 0
-                  AND sector = '{sector}'
-                ORDER BY dollar_volume_rank
+                SELECT {UniverseSelect}
+                FROM {UniverseFrom}
+                WHERE px.date = '{date:yyyy-MM-dd}'
+                  AND px.close > 0
+                  AND px.volume > 0
+                  AND px.sector = '{sector}'
+                ORDER BY dollar_volume DESC
                 LIMIT {topN}
                 FORMAT JSONEachRow";
 
@@ -239,14 +253,13 @@ namespace QuantConnect.Data.UniverseSelection
             
             // Query ClickHouse directly
             var query = $@"
-                SELECT ticker, close, volume, dollar_volume, pe_ratio, pb_ratio,
-                       marketcap, sector, industry, dollar_volume_rank
-                FROM daily_screener FINAL
-                WHERE date = '{date:yyyy-MM-dd}'
-                  AND close > 0
-                  AND volume > 0
-                  AND industry = '{industry}'
-                ORDER BY dollar_volume_rank
+                SELECT {UniverseSelect}
+                FROM {UniverseFrom}
+                WHERE px.date = '{date:yyyy-MM-dd}'
+                  AND px.close > 0
+                  AND px.volume > 0
+                  AND px.industry = '{industry}'
+                ORDER BY dollar_volume DESC
                 LIMIT {topN}
                 FORMAT JSONEachRow";
 
