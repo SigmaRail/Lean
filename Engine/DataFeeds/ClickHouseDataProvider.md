@@ -32,7 +32,8 @@ The goal is to keep LEAN's bar data path predictable and efficient:
 
 - one ticker archive at a time
 - range-aware freshness checks
-- explicit zip generation from ClickHouse
+- direct ClickHouse C++ TabSeparated streaming (zero JSON serialization/deserialization)
+- `CompressionLevel.NoCompression` in-memory streaming to eliminate CPU deflate compression overhead
 - no universe filtering logic mixed into this provider
 
 ## Related class
