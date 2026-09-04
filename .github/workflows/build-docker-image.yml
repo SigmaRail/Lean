@@ -22,7 +22,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/lean-clickhouse
+  IMAGE_NAME: ${{ github.repository }}/lean-clickhouse
 
 jobs:
   build-and-push:
