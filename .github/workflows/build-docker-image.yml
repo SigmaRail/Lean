@@ -44,16 +44,34 @@ jobs:
         run: |
           echo "=== Pre-cleanup ==="
           df -h /
-          # Remove pre-installed dotnet SDKs we don't need to free ~2GB
+
+          # Remove all pre-installed dotnet SDKs/Runtimes except the one we just installed
           rm -rf /usr/share/dotnet/sdk/9.* /usr/share/dotnet/sdk/8.* /usr/share/dotnet/sdk/7.* /usr/share/dotnet/sdk/6.* 2>/dev/null || true
           rm -rf /usr/share/dotnet/shared/Microsoft.NETCore.App/6.* /usr/share/dotnet/shared/Microsoft.NETCore.App/7.* /usr/share/dotnet/shared/Microsoft.NETCore.App/8.* /usr/share/dotnet/shared/Microsoft.NETCore.App/9.* 2>/dev/null || true
           rm -rf /usr/share/dotnet/shared/Microsoft.AspNetCore.App/6.* /usr/share/dotnet/shared/Microsoft.AspNetCore.App/7.* /usr/share/dotnet/shared/Microsoft.AspNetCore.App/8.* /usr/share/dotnet/shared/Microsoft.AspNetCore.App/9.* 2>/dev/null || true
-          # Clean apt cache, swap files, other cruft
+
+          # Remove all pre-loaded Docker images (the build will pull what it needs)
+          docker system prune -af 2>/dev/null || true
+
+          # Remove miniconda (massive - NVIDIA CUDA libs etc)
+          sudo rm -rf /opt/miniconda 2>/dev/null || true
+          sudo rm -rf /opt/miniconda2 2>/dev/null || true
+          sudo rm -rf /opt/miniconda3 2>/dev/null || true
+          sudo rm -rf /usr/share/miniconda 2>/dev/null || true
+
+          # Remove large dev toolkits pre-installed on the runner (not hostedtoolcache - that's where our SDK lives)
+          sudo rm -rf /opt/ghc 2>/dev/null || true
+          sudo rm -rf /usr/local/lib/android 2>/dev/null || true
+          sudo rm -rf /usr/share/swift 2>/dev/null || true
+          sudo rm -rf /usr/local/share/powershell 2>/dev/null || true
+          sudo rm -rf /usr/share/az* 2>/dev/null || true
+          sudo rm -rf /usr/local/share/azure-cli 2>/dev/null || true
+
+          # Clean package manager caches
           sudo apt-get clean -qq 2>/dev/null || true
           sudo rm -rf /var/lib/apt/lists/* 2>/dev/null || true
-          # Remove Android SDK, .NET packages, etc
-          sudo rm -rf /usr/share/android-sdk /usr/share/swift /usr/local/share/powershell 2>/dev/null || true
-          docker system prune -af 2>/dev/null || true
+          sudo rm -rf /var/cache/apt/archives/*.deb 2>/dev/null || true
+
           echo "=== After pre-cleanup ==="
           df -h /
 
@@ -90,6 +108,9 @@ jobs:
 
           # Remove docker images that came with the runner (we only need lean:foundation)
           docker system prune -af --filter "until=24h" 2>/dev/null || true
+
+          # Remove .NET SDK tool cache since we're done with it (frees ~700MB)
+          sudo rm -rf /opt/hostedtoolcache 2>/dev/null || true
 
           echo "=== Disk after cleanup ==="
           df -h /
