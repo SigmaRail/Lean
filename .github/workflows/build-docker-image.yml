@@ -1,49 +1,121 @@
-name: Verify LEAN Docker Image
+name: Build & Publish LEAN Docker Image
 
 on:
+  push:
+    branches:
+      - vera/master
+    paths:
+      - '**/*.cs'
+      - '**/*.csproj'
+      - 'Dockerfile'
+      - 'build-docker-image'
   workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Target platform'
+        type: choice
+        options:
+          - linux/amd64
+          - linux/arm64
+          - linux/amd64,linux/arm64
+        default: linux/amd64,linux/arm64
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/lean-clickhouse
 
 jobs:
-  verify:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
-    
+      packages: write
+
     steps:
-      - name: Login to GitHub Container Registry
+      - name: Checkout Lean repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build LEAN solution (Release)
+        run: dotnet build -c Release --no-restore
+
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Pull and verify Docker image
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image tags
+        id: meta
         run: |
-          echo "Pulling LEAN Docker image..."
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          
-          echo "Verifying image..."
-          docker inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          
-          echo "Testing image..."
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest --help
-      
+          SHORT_SHA="${{ github.sha != '' && format('{0}', github.sha) || '0000000' }}"
+          SHORT_SHA="${SHORT_SHA:0:8}"
+
+          TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          fi
+
+          if [ "${{ github.event.inputs.platform }}" != "" ]; then
+            PLATFORM="${{ github.event.inputs.platform }}"
+            if [ "$PLATFORM" = "linux/amd64" ]; then
+              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            elif [ "$PLATFORM" = "linux/arm64" ]; then
+              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64-latest"
+            elif [ "$PLATFORM" = "linux/amd64,linux/arm64" ]; then
+              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64-latest"
+            fi
+          fi
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+
+      - name: Determine target platforms
+        id: platforms
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.inputs.platform }}" != "" ]; then
+            echo "platforms=${{ github.event.inputs.platform }}" >> $GITHUB_OUTPUT
+          else
+            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ steps.platforms.outputs.platforms }}
+          provenance: false
+
       - name: Image summary
         run: |
-          echo "## Docker Image Verified Successfully ✅" >> $GITHUB_STEP_SUMMARY
+          echo "## LEAN Docker Image Published ✅" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Visibility:** 🔒 Private" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags pushed:**" >> $GITHUB_STEP_SUMMARY
+          IFS=',' read -ra TAGS <<< "${{ steps.meta.outputs.tags }}"
+          for TAG in "${TAGS[@]}"; do
+            echo "  - \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
+          done
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Note:** This image is built locally and pushed manually." >> $GITHUB_STEP_SUMMARY
-          echo "To rebuild, run locally:" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "./build-docker-image" >> $GITHUB_STEP_SUMMARY
-          echo "./push-docker-image" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** ${{ steps.platforms.outputs.platforms }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔒 Image is **private** on GitHub Container Registry." >> $GITHUB_STEP_SUMMARY
+          echo "To change visibility, visit https://github.com/orgs/${{ github.repository_owner }}/packages" >> $GITHUB_STEP_SUMMARY
