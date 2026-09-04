@@ -101,55 +101,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Generate image tags
-        id: meta
-        run: |
-          SHORT_SHA="${{ github.sha != '' && format('{0}', github.sha) || '0000000' }}"
-          SHORT_SHA="${SHORT_SHA:0:8}"
-
-          TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
-
-          if [ "${{ github.event_name }}" = "push" ]; then
-            TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          fi
-
-          if [ "${{ github.event.inputs.platform }}" != "" ]; then
-            PLATFORM="${{ github.event.inputs.platform }}"
-            if [ "$PLATFORM" = "linux/amd64" ]; then
-              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-            elif [ "$PLATFORM" = "linux/arm64" ]; then
-              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64-latest"
-            elif [ "$PLATFORM" = "linux/amd64,linux/arm64" ]; then
-              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-              TAGS="${TAGS},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64-latest"
-            fi
-          fi
-
-          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
-
-      - name: Determine target platforms
-        id: platforms
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event.inputs.platform }}" != "" ]; then
-            echo "platforms=${{ github.event.inputs.platform }}" >> $GITHUB_OUTPUT
-          else
-            echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
-          fi
-
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          platforms: ${{ steps.platforms.outputs.platforms }}
-          provenance: false
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:8}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+
+          echo "Building and pushing: ${IMAGE}:latest, ${IMAGE}:${SHORT_SHA}"
+          docker build -t "${IMAGE}:latest" -t "${IMAGE}:${SHORT_SHA}" .
+          docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:${SHORT_SHA}"
+
+          # Save tags for the summary step
+          echo "tags=${IMAGE}:latest,${IMAGE}:${SHORT_SHA}" >> $GITHUB_ENV
+          echo "platform=linux/amd64" >> $GITHUB_ENV
 
       - name: Image summary
         run: |
@@ -158,12 +122,12 @@ jobs:
           echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Tags pushed:**" >> $GITHUB_STEP_SUMMARY
-          IFS=',' read -ra TAGS <<< "${{ steps.meta.outputs.tags }}"
+          IFS=',' read -ra TAGS <<< "${{ env.tags }}"
           for TAG in "${TAGS[@]}"; do
             echo "  - \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
           done
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Platforms:** ${{ steps.platforms.outputs.platforms }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** ${{ env.platform }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "🔒 Image is **private** on GitHub Container Registry." >> $GITHUB_STEP_SUMMARY
           echo "To change visibility, visit https://github.com/orgs/${{ github.repository_owner }}/packages" >> $GITHUB_STEP_SUMMARY
