@@ -46,6 +46,15 @@ jobs:
       - name: Build LEAN solution (Release)
         run: dotnet build -c Release --no-restore
 
+      - name: Free disk space before Docker build
+        run: |
+          # Remove test and benchmark build artifacts to free runner disk space
+          rm -rf Tests/bin/Release/
+          rm -rf Tests/obj/
+          rm -rf Benchmarks/bin/Release/
+          rm -rf Benchmarks/obj/
+          df -h /
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
