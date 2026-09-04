@@ -40,6 +40,23 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Free runner disk space (pre-build)
+        run: |
+          echo "=== Pre-cleanup ==="
+          df -h /
+          # Remove pre-installed dotnet SDKs we don't need to free ~2GB
+          rm -rf /usr/share/dotnet/sdk/9.* /usr/share/dotnet/sdk/8.* /usr/share/dotnet/sdk/7.* /usr/share/dotnet/sdk/6.* 2>/dev/null || true
+          rm -rf /usr/share/dotnet/shared/Microsoft.NETCore.App/6.* /usr/share/dotnet/shared/Microsoft.NETCore.App/7.* /usr/share/dotnet/shared/Microsoft.NETCore.App/8.* /usr/share/dotnet/shared/Microsoft.NETCore.App/9.* 2>/dev/null || true
+          rm -rf /usr/share/dotnet/shared/Microsoft.AspNetCore.App/6.* /usr/share/dotnet/shared/Microsoft.AspNetCore.App/7.* /usr/share/dotnet/shared/Microsoft.AspNetCore.App/8.* /usr/share/dotnet/shared/Microsoft.AspNetCore.App/9.* 2>/dev/null || true
+          # Clean apt cache, swap files, other cruft
+          sudo apt-get clean -qq 2>/dev/null || true
+          sudo rm -rf /var/lib/apt/lists/* 2>/dev/null || true
+          # Remove Android SDK, .NET packages, etc
+          sudo rm -rf /usr/share/android-sdk /usr/share/swift /usr/local/share/powershell 2>/dev/null || true
+          docker system prune -af 2>/dev/null || true
+          echo "=== After pre-cleanup ==="
+          df -h /
+
       - name: Restore dependencies
         run: dotnet restore
 
@@ -48,11 +65,33 @@ jobs:
 
       - name: Free disk space before Docker build
         run: |
-          # Remove test and benchmark build artifacts to free runner disk space
+          # Aggressively free runner disk space for Docker build
+          # .NET build (tests + all projects) + NuGet cache + Docker layers easily exceed ~14GB free
+          echo "=== Disk before cleanup ==="
+          df -h /
+          du -sh /usr/share/dotnet/sdk 2>/dev/null || true
+          du -sh /usr/share/dotnet/shared 2>/dev/null || true
+
+          # Remove test and benchmark build artifacts
           rm -rf Tests/bin/Release/
           rm -rf Tests/obj/
           rm -rf Benchmarks/bin/Release/
           rm -rf Benchmarks/obj/
+          rm -rf Optimizer/bin/Release/
+          rm -rf Optimizer/obj/
+
+          # Remove NuGet cache (we already restored)
+          rm -rf ~/.nuget/packages/
+          rm -rf /tmp/NuGetScratch/
+
+          # Remove .NET SDK installers and temp files
+          rm -rf /tmp/*.tar.gz /tmp/*.sh
+          rm -rf /home/runner/.dotnet/**/*.tar.gz 2>/dev/null || true
+
+          # Remove docker images that came with the runner (we only need lean:foundation)
+          docker system prune -af --filter "until=24h" 2>/dev/null || true
+
+          echo "=== Disk after cleanup ==="
           df -h /
 
       - name: Log in to GitHub Container Registry
