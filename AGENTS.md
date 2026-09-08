@@ -13,7 +13,7 @@ This file applies to everything under `Lean/`.
 ## Critical Architecture Rules
 
 - Keep provider responsibilities separate:
-  - `Engine/DataFeeds/ClickHouseDataProvider.cs` handles on-demand equity daily zip materialization/freshness.
+  - `Engine/DataFeeds/ClickHouseDataProvider.cs` handles on-demand equity daily zip materialization/freshness, plus windowed batch pre-hydration (`PreHydrate(tickers, start, end)`), position-driven eviction (`Evict`/`EvictMany`), and a `static Current` accessor for the Python-side schedule bridge (see `Engine/DataFeeds/ClickHouseDataProvider.md`).
   - `Common/Data/UniverseSelection/ClickHouseUniverseSelectionProvider` handles ticker screening/universe inputs.
 - Do not merge universe-selection logic into the engine data-feed provider.
 - Do not bypass LEAN data pipeline unless explicitly requested.

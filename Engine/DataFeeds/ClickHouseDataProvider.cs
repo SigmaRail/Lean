@@ -55,8 +55,16 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private static readonly ConcurrentDictionary<string, byte[]> _zipBytesCache = new();
         private readonly bool _trace;
 
+        /// <summary>
+        /// The most-recently-constructed provider instance, exposed so Python-side
+        /// scheduling can drive windowed pre-hydration / eviction (see
+        /// <see cref="PreHydrate"/> and <see cref="Evict"/>).
+        /// </summary>
+        public static ClickHouseDataProvider Current { get; private set; }
+
         public ClickHouseDataProvider()
         {
+            Current = this;
             _host = Config.Get("clickhouse-host", "localhost");
             _port = Config.GetInt("clickhouse-http-port", 8123);
             _database = Config.Get("clickhouse-database", string.Empty);
@@ -113,10 +121,36 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             if (_zipBytesCache.TryGetValue(normalizedKey, out var cached))
             {
+                if (_trace)
+                {
+                    Log.Trace($"ClickHouseDataProvider.Fetch(): cache HIT {normalizedKey} ({cached.Length} bytes)");
+                }
                 return new MemoryStream(cached, writable: false);
             }
 
+            if (_trace)
+            {
+                Log.Trace($"ClickHouseDataProvider.Fetch(): cache MISS {normalizedKey}");
+            }
+
             return DownloadOnce(normalizedKey, BuildAndOptionallyPersist);
+        }
+
+        /// <summary>
+        /// Override GetStream to serve from the in-memory zip cache instead of reading from disk.
+        /// BaseDownloaderDataProvider calls GetStream after BuildAndOptionallyPersist completes.
+        /// Without this override, GetStream delegates to DefaultDataProvider.Fetch() which reads
+        /// from disk — but in in_memory mode the zip was never written to disk, so it returns null
+        /// and the 609/622 failure rate seen in the backtest log.
+        /// </summary>
+        protected override Stream GetStream(string key)
+        {
+            var normalizedKey = NormalizeKey(key);
+            if (_zipBytesCache.TryGetValue(normalizedKey, out var cached))
+            {
+                return new MemoryStream(cached, writable: false);
+            }
+            return base.Fetch(key);
         }
 
         protected override bool NeedToDownload(string filePath)
@@ -214,8 +248,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
         /// <summary>
         /// Bulk pre-hydrates in-memory zip bytes for multiple tickers in a single ClickHouse TabSeparated query.
+        /// When <paramref name="start"/>/<paramref name="end"/> are omitted, the effective backtest range is used.
         /// </summary>
-        public int PreHydrate(IEnumerable<string> tickers)
+        public int PreHydrate(IEnumerable<string> tickers, DateTime? start = null, DateTime? end = null)
         {
             if (tickers == null || string.IsNullOrEmpty(_database))
             {
@@ -241,6 +276,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var range = GetEffectiveRange();
+            var rangeStart = start ?? range.Start;
+            var rangeEnd = end ?? range.End;
             var tickerFilter = string.Join("','", unCached);
 
             var sql = $@"
@@ -254,7 +291,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 )
                 FROM screener_price_tech_daily FINAL
                 WHERE ticker IN ('{tickerFilter}')
-                  AND date BETWEEN toDate('{range.Start:yyyy-MM-dd}') AND toDate('{range.End:yyyy-MM-dd}')
+                  AND date BETWEEN toDate('{rangeStart:yyyy-MM-dd}') AND toDate('{rangeEnd:yyyy-MM-dd}')
                   AND close IS NOT NULL
                   AND volume IS NOT NULL
                 ORDER BY ticker ASC, date ASC
@@ -262,6 +299,13 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             ";
 
             var rawBytes = QueryRawBytes(sql);
+            if (_trace)
+            {
+                var head = rawBytes != null && rawBytes.Length > 0
+                    ? Encoding.UTF8.GetString(rawBytes, 0, Math.Min(160, rawBytes.Length)).Replace("\n", "\\n")
+                    : "";
+                Log.Trace($"ClickHouseDataProvider.PreHydrate(): rawBytes={rawBytes?.Length ?? -1} head={head}");
+            }
             if (rawBytes == null || rawBytes.Length == 0)
             {
                 return 0;
@@ -298,12 +342,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 var csvBytes = Encoding.UTF8.GetBytes(kvp.Value.ToString());
 
                 using var ms = new MemoryStream();
-                using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+                using (var zip = new Ionic.Zip.ZipFile())
                 {
-                    var compression = _materialize ? CompressionLevel.Fastest : CompressionLevel.NoCompression;
-                    var entry = zip.CreateEntry($"{symbol.ToLowerInvariant()}.csv", compression);
-                    using var entryStream = entry.Open();
-                    entryStream.Write(csvBytes, 0, csvBytes.Length);
+                    zip.AddEntry($"{symbol.ToLowerInvariant()}.csv", csvBytes);
+                    zip.Save(ms);
                 }
 
                 var zipBytes = ms.ToArray();
@@ -330,6 +372,34 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
 
             return count;
+        }
+
+        /// <summary>
+        /// Removes cached zip bytes for a single ticker (position-driven eviction on flat).
+        /// </summary>
+        public void Evict(string ticker)
+        {
+            if (string.IsNullOrWhiteSpace(ticker))
+            {
+                return;
+            }
+            var key = $"equity/usa/daily/{ticker.Trim().ToLowerInvariant()}.zip";
+            _zipBytesCache.TryRemove(key, out _);
+        }
+
+        /// <summary>
+        /// Removes cached zip bytes for multiple tickers.
+        /// </summary>
+        public void EvictMany(IEnumerable<string> tickers)
+        {
+            if (tickers == null)
+            {
+                return;
+            }
+            foreach (var t in tickers)
+            {
+                Evict(t);
+            }
         }
 
         private void BuildAndOptionallyPersist(string key)
@@ -405,34 +475,44 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             ";
 
             var csvBytes = QueryRawBytes(sql);
+            if (_trace)
+            {
+                Log.Trace($"ClickHouseDataProvider.FetchDirect(): ticker={ticker} range={start:yyyy-MM-dd}->{end:yyyy-MM-dd} rawBytes={(csvBytes?.Length ?? -1)}");
+            }
             var lower = ticker.ToLowerInvariant();
             var entryName = $"{lower}.csv";
 
             using var ms = new MemoryStream();
-            using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+            using (var zip = new Ionic.Zip.ZipFile())
             {
-                var compression = _materialize ? CompressionLevel.Fastest : CompressionLevel.NoCompression;
-                var entry = zip.CreateEntry(entryName, compression);
-                using var entryStream = entry.Open();
-                entryStream.Write(csvBytes, 0, csvBytes.Length);
+                zip.AddEntry(entryName, csvBytes);
+                zip.Save(ms);
             }
             return ms.ToArray();
         }
 
         private byte[] QueryRawBytes(string sql)
         {
-            var url = $"http://{_host}:{_port}/?database={Uri.EscapeDataString(_database)}";
+            try
+            {
+                var url = $"http://{_host}:{_port}/?database={Uri.EscapeDataString(_database)}";
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Content = new StringContent(sql, Encoding.UTF8, "text/plain");
+                using var req = new HttpRequestMessage(HttpMethod.Post, url);
+                req.Content = new StringContent(sql, Encoding.UTF8, "text/plain");
 
-            if (!string.IsNullOrEmpty(_user)) req.Headers.Add("X-ClickHouse-User", _user);
-            if (!string.IsNullOrEmpty(_password)) req.Headers.Add("X-ClickHouse-Key", _password);
+                if (!string.IsNullOrEmpty(_user)) req.Headers.Add("X-ClickHouse-User", _user);
+                if (!string.IsNullOrEmpty(_password)) req.Headers.Add("X-ClickHouse-Key", _password);
 
-            using var resp = _http.Send(req);
-            resp.EnsureSuccessStatusCode();
+                using var resp = _http.Send(req);
+                resp.EnsureSuccessStatusCode();
 
-            return resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                return resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            }
+            catch (Exception e)
+            {
+                Log.Error($"ClickHouseDataProvider.QueryRawBytes(): {e.GetType().Name}: {e.Message}");
+                throw;
+            }
         }
 
         private static bool IsSupportedKey(string key)

@@ -26,6 +26,18 @@ That job belongs to the universe-selection classes under:
 3. If the artifact is missing or stale, the ClickHouse provider rebuilds it from ClickHouse.
 4. The rebuilt zip is cached in memory and optionally materialized to disk.
 
+## Bounded batch pre-hydration + eviction (windowed bar fetch)
+
+`PreHydrate(IEnumerable<string> tickers, DateTime? start = null, DateTime? end = null)` bulk-fetches many
+tickers in a single `WHERE ticker IN (...)` TabSeparated query. When `start`/`end` are supplied, the query is
+bounded to that window (instead of the full effective backtest range) — this is the windowed-fetch lever used by
+the strategy schedule (see `vera_lab/runtime/bar_fetch_schedule.py`). Omitting `start`/`end` preserves the
+original full-range behavior, so existing callers are unaffected.
+
+`Evict(string ticker)` / `EvictMany(IEnumerable<string>)` drop cached zip bytes for a ticker, for
+position-driven cache eviction when a holding goes flat (keeps the cache bound to the *held* set, not the
+cumulative-ever-subscribed set).
+
 ## Why this exists
 
 The goal is to keep LEAN's bar data path predictable and efficient:
