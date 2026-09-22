@@ -30,13 +30,17 @@ using QuantConnect.Util;
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
     /// <summary>
-    /// IDataProvider that materializes LEAN equity daily zip files on-demand from ClickHouse.
+    /// IDataProvider that serves LEAN equity daily bars from ClickHouse.
     ///
-    /// Intended to be used via CompositeDataProvider:
-    /// - DefaultDataProvider (disk)
-    /// - ClickHouseDataProvider (on-demand)
+    /// Bulk <see cref="PreHydrate"/> loads many tickers from <c>daily_metrics</c>
+    /// in large <c>WHERE ticker IN (...)</c> queries for the <b>full</b> configured
+    /// backtest range, then stores Lean zip envelopes in RAM. <see cref="Fetch"/>
+    /// returns a cache hit, or one single-ticker full-range query on miss. Date
+    /// windows passed into PreHydrate are ignored so a short screen span cannot
+    /// become the ticker's entire history. <see cref="Evict"/> is a no-op (do not
+    /// drop bars while invested).
     ///
-    /// Supports overwrite-on-miss based on range coverage + ClickHouse max(date) and max(lastupdated).
+    /// CompositeDataProvider order: ClickHouseDataProvider then DefaultDataProvider.
     /// </summary>
     public class ClickHouseDataProvider : BaseDownloaderDataProvider
     {
@@ -52,13 +56,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private readonly DateTime _startDate;
         private readonly DateTime _endDate;
 
+        // Full-range Lean zip envelopes from PreHydrate / Fetch miss. Never store a
+        // truncated screen window under this key.
         private static readonly ConcurrentDictionary<string, byte[]> _zipBytesCache = new();
         private readonly bool _trace;
+        // OHLCV only. L7 screener_price_tech_daily is a wide ReplacingMergeTree;
+        // bars do not need FINAL or VCP/RS columns.
+        private const string EquityBarTable = "daily_metrics";
+        // Large IN lists so a decade hydrate is one (or few) scans, not 50-name loops.
+        private const int PreHydrateChunkSize = 2000;
 
         /// <summary>
-        /// The most-recently-constructed provider instance, exposed so Python-side
-        /// scheduling can drive windowed pre-hydration / eviction (see
-        /// <see cref="PreHydrate"/> and <see cref="Evict"/>).
+        /// The most-recently-constructed provider instance. Python drives bulk
+        /// <see cref="PreHydrate"/>; Lean <see cref="Fetch"/> reads the cache.
         /// </summary>
         public static ClickHouseDataProvider Current { get; private set; }
 
@@ -119,7 +129,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 return null;
             }
 
-            if (_zipBytesCache.TryGetValue(normalizedKey, out var cached))
+            if (_zipBytesCache.TryGetValue(normalizedKey, out var cached) && cached != null && cached.Length > 0)
             {
                 if (_trace)
                 {
@@ -128,12 +138,21 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 return new MemoryStream(cached, writable: false);
             }
 
+            var ticker = ParseTickerFromKey(normalizedKey);
+            var range = GetEffectiveRange();
             if (_trace)
             {
-                Log.Trace($"ClickHouseDataProvider.Fetch(): cache MISS {normalizedKey}");
+                Log.Trace($"ClickHouseDataProvider.Fetch(): cache MISS live ClickHouse {ticker} {range.Start:yyyy-MM-dd}->{range.End:yyyy-MM-dd}");
             }
 
-            return DownloadOnce(normalizedKey, BuildAndOptionallyPersist);
+            var zipBytes = FetchDirectDailyEquityZipBytes(ticker, range.Start, range.End);
+            if (zipBytes == null || zipBytes.Length == 0)
+            {
+                return null;
+            }
+
+            _zipBytesCache[normalizedKey] = zipBytes;
+            return new MemoryStream(zipBytes, writable: false);
         }
 
         /// <summary>
@@ -156,99 +175,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         protected override bool NeedToDownload(string filePath)
         {
             var normalizedKey = NormalizeKey(filePath);
-
-            // In-Memory RAM Mode: if already cached in RAM, return false immediately.
-            if (!_materialize)
-            {
-                return !_zipBytesCache.ContainsKey(normalizedKey);
-            }
-
-            var normalizedPath = FileExtension.ToNormalizedPath(filePath);
-            var metaPath = normalizedPath + ".meta.json";
-
-            if (_trace)
-            {
-                Log.Trace($"ClickHouseDataProvider.NeedToDownload(): filePath='{filePath}' normalizedPath='{normalizedPath}'");
-            }
-
-            if (!File.Exists(normalizedPath) || !File.Exists(metaPath))
-            {
-                if (_trace)
-                {
-                    Log.Trace($"ClickHouseDataProvider.NeedToDownload(): missing file/meta for '{normalizedPath}'");
-                }
-                return true;
-            }
-
-            ClickHouseZipMeta meta;
-            try
-            {
-                meta = JsonConvert.DeserializeObject<ClickHouseZipMeta>(File.ReadAllText(metaPath));
-            }
-            catch
-            {
-                return true;
-            }
-
-            var ticker = ParseTickerFromKey(filePath);
-            if (meta == null || !string.Equals(meta.Ticker, ticker, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            var range = GetEffectiveRange();
-
-            // Coverage check
-            if (meta.EffectiveStart > range.Start || meta.EffectiveEnd < range.End)
-            {
-                if (_trace)
-                {
-                    Log.Trace($"ClickHouseDataProvider.NeedToDownload(): coverage miss ticker={ticker} meta=[{meta.EffectiveStart:yyyy-MM-dd}->{meta.EffectiveEnd:yyyy-MM-dd}] required=[{range.Start:yyyy-MM-dd}->{range.End:yyyy-MM-dd}]");
-                }
-                return true;
-            }
-
-            try
-            {
-                var db = QueryDbMaxes(ticker, range.Start, range.End);
-
-                // If DB has no data in range, don't force rebuild
-                if (!db.DbMaxDate.HasValue)
-                {
-                    return false;
-                }
-
-                if (!meta.DbMaxDate.HasValue || meta.DbMaxDate.Value.Date < db.DbMaxDate.Value.Date)
-                {
-                    if (_trace)
-                    {
-                        Log.Trace($"ClickHouseDataProvider.NeedToDownload(): db max(date) newer ticker={ticker} meta={meta.DbMaxDate:yyyy-MM-dd} db={db.DbMaxDate:yyyy-MM-dd}");
-                    }
-                    return true;
-                }
-
-                if (meta.DbLastUpdated < db.DbLastUpdated)
-                {
-                    if (_trace)
-                    {
-                        Log.Trace($"ClickHouseDataProvider.NeedToDownload(): db max(lastupdated) newer ticker={ticker} meta={meta.DbLastUpdated:o} db={db.DbLastUpdated:o}");
-                    }
-                    return true;
-                }
-
-                return false;
-            }
-            catch (Exception e)
-            {
-                Log.Error(e);
-                // If ClickHouse isn't reachable, fall back to existing on-disk file
-                return false;
-            }
+            return !_zipBytesCache.ContainsKey(normalizedKey);
         }
 
         /// <summary>
-        /// Bulk pre-hydrates in-memory zip bytes for multiple tickers in a single ClickHouse TabSeparated query.
-        /// When <paramref name="start"/>/<paramref name="end"/> are omitted, the effective backtest range is used.
+        /// Bulk-load Lean zip envelopes for many tickers in large ClickHouse
+        /// <c>IN (...)</c> queries over the full configured backtest range.
+        /// <paramref name="start"/> / <paramref name="end"/> are ignored.
+        /// Tickers already cached are skipped (full range is never replaced by a shorter window).
         /// </summary>
         public int PreHydrate(IEnumerable<string> tickers, DateTime? start = null, DateTime? end = null)
         {
@@ -257,12 +191,20 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 return 0;
             }
 
-            var unCached = new List<string>();
-            foreach (var t in tickers)
+            var range = GetEffectiveRange();
+            if (_trace && (start.HasValue || end.HasValue))
             {
-                if (string.IsNullOrWhiteSpace(t)) continue;
-                var upper = t.Trim().ToUpperInvariant();
-                var key = $"equity/usa/daily/{upper.ToLowerInvariant()}.zip";
+                Log.Trace($"ClickHouseDataProvider.PreHydrate(): ignoring window {start:yyyy-MM-dd}->{end:yyyy-MM-dd}; using full range {range.Start:yyyy-MM-dd}->{range.End:yyyy-MM-dd}");
+            }
+
+            var unCached = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var raw in tickers)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                var upper = raw.Trim().ToUpperInvariant();
+                if (!IsSafeTicker(upper) || !seen.Add(upper)) continue;
+                var key = DailyZipKey(upper);
                 if (!_zipBytesCache.ContainsKey(key))
                 {
                     unCached.Add(upper);
@@ -274,117 +216,25 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 return 0;
             }
 
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            var range = GetEffectiveRange();
-            var rangeStart = start ?? range.Start;
-            var rangeEnd = end ?? range.End;
-            var tickerFilter = string.Join("','", unCached);
-
-            var sql = $@"
-                SELECT ticker, concat(
-                    formatDateTime(toDate(date), '%Y%m%d 00:00'), ',',
-                    toString(round(ifNull(open, close) * 10000)), ',',
-                    toString(round(ifNull(high, close) * 10000)), ',',
-                    toString(round(ifNull(low, close) * 10000)), ',',
-                    toString(round(ifNull(close, 0) * 10000)), ',',
-                    toString(toUInt64(ifNull(volume, 0)))
-                )
-                FROM screener_price_tech_daily FINAL
-                WHERE ticker IN ('{tickerFilter}')
-                  AND date BETWEEN toDate('{rangeStart:yyyy-MM-dd}') AND toDate('{rangeEnd:yyyy-MM-dd}')
-                  AND close IS NOT NULL
-                  AND volume IS NOT NULL
-                ORDER BY ticker ASC, date ASC
-                FORMAT TabSeparated
-            ";
-
-            var rawBytes = QueryRawBytes(sql);
-            if (_trace)
+            var total = 0;
+            for (var i = 0; i < unCached.Count; i += PreHydrateChunkSize)
             {
-                var head = rawBytes != null && rawBytes.Length > 0
-                    ? Encoding.UTF8.GetString(rawBytes, 0, Math.Min(160, rawBytes.Length)).Replace("\n", "\\n")
-                    : "";
-                Log.Trace($"ClickHouseDataProvider.PreHydrate(): rawBytes={rawBytes?.Length ?? -1} head={head}");
+                var take = Math.Min(PreHydrateChunkSize, unCached.Count - i);
+                var chunk = unCached.GetRange(i, take);
+                total += PreHydrateChunk(chunk, range.Start, range.End);
             }
-            if (rawBytes == null || rawBytes.Length == 0)
-            {
-                return 0;
-            }
-
-            // Group lines by ticker
-            var tickerLines = new Dictionary<string, StringBuilder>(StringComparer.OrdinalIgnoreCase);
-            using (var reader = new StreamReader(new MemoryStream(rawBytes), Encoding.UTF8))
-            {
-                string line;
-                while ((line = reader.ReadLine()) != null)
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    var tabIdx = line.IndexOf('\t');
-                    if (tabIdx <= 0) continue;
-
-                    var symbol = line.Substring(0, tabIdx).Trim();
-                    var csvLine = line.Substring(tabIdx + 1);
-
-                    if (!tickerLines.TryGetValue(symbol, out var sb))
-                    {
-                        sb = new StringBuilder();
-                        tickerLines[symbol] = sb;
-                    }
-                    sb.AppendLine(csvLine);
-                }
-            }
-
-            var count = 0;
-            foreach (var kvp in tickerLines)
-            {
-                var symbol = kvp.Key.ToUpperInvariant();
-                var key = $"equity/usa/daily/{symbol.ToLowerInvariant()}.zip";
-                var csvBytes = Encoding.UTF8.GetBytes(kvp.Value.ToString());
-
-                using var ms = new MemoryStream();
-                using (var zip = new Ionic.Zip.ZipFile())
-                {
-                    zip.AddEntry($"{symbol.ToLowerInvariant()}.csv", csvBytes);
-                    zip.Save(ms);
-                }
-
-                var zipBytes = ms.ToArray();
-                _zipBytesCache[key] = zipBytes;
-                count++;
-
-                if (_materialize)
-                {
-                    try
-                    {
-                        var normalizedPath = FileExtension.ToNormalizedPath(key);
-                        var dir = Path.GetDirectoryName(normalizedPath);
-                        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                        File.WriteAllBytes(normalizedPath, zipBytes);
-                    }
-                    catch { }
-                }
-            }
-
-            sw.Stop();
-            if (_trace || count > 0)
-            {
-                Log.Trace($"ClickHouseDataProvider.PreHydrate(): hydrated {count}/{unCached.Count} symbols in {sw.ElapsedMilliseconds}ms (in-memory mode={!_materialize})");
-            }
-
-            return count;
+            return total;
         }
 
         /// <summary>
-        /// Removes cached zip bytes for a single ticker (position-driven eviction on flat).
+        /// No-op. Held names keep the bars already loaded from ClickHouse Fetch.
         /// </summary>
         public void Evict(string ticker)
         {
-            if (string.IsNullOrWhiteSpace(ticker))
+            if (_trace && !string.IsNullOrWhiteSpace(ticker))
             {
-                return;
+                Log.Trace($"ClickHouseDataProvider.Evict(): no-op ticker={ticker}");
             }
-            var key = $"equity/usa/daily/{ticker.Trim().ToLowerInvariant()}.zip";
-            _zipBytesCache.TryRemove(key, out _);
         }
 
         /// <summary>
@@ -400,6 +250,136 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             {
                 Evict(t);
             }
+        }
+
+        private int PreHydrateChunk(List<string> chunk, DateTime rangeStart, DateTime rangeEnd)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var tickerFilter = string.Join("','", chunk);
+            var sql = $@"
+                SELECT ticker, concat(
+                    formatDateTime(toDate(date), '%Y%m%d 00:00'), ',',
+                    toString(round(ifNull(open, close) * 10000)), ',',
+                    toString(round(ifNull(high, close) * 10000)), ',',
+                    toString(round(ifNull(low, close) * 10000)), ',',
+                    toString(round(ifNull(close, 0) * 10000)), ',',
+                    toString(toUInt64(ifNull(volume, 0)))
+                )
+                FROM {EquityBarTable}
+                WHERE ticker IN ('{tickerFilter}')
+                  AND date BETWEEN toDate('{rangeStart:yyyy-MM-dd}') AND toDate('{rangeEnd:yyyy-MM-dd}')
+                  AND close IS NOT NULL
+                  AND volume IS NOT NULL
+                ORDER BY ticker ASC, date ASC
+                FORMAT TabSeparated
+            ";
+
+            var rawBytes = QueryRawBytes(sql);
+            if (rawBytes == null || rawBytes.Length == 0)
+            {
+                if (_trace)
+                {
+                    Log.Trace($"ClickHouseDataProvider.PreHydrate(): chunk empty tickers={chunk.Count} range={rangeStart:yyyy-MM-dd}->{rangeEnd:yyyy-MM-dd}");
+                }
+                return 0;
+            }
+
+            var tickerLines = new Dictionary<string, StringBuilder>(StringComparer.OrdinalIgnoreCase);
+            using (var reader = new StreamReader(new MemoryStream(rawBytes), Encoding.UTF8))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    var tabIdx = line.IndexOf('\t');
+                    if (tabIdx <= 0) continue;
+
+                    var symbol = line.Substring(0, tabIdx).Trim();
+                    var csvLine = line.Substring(tabIdx + 1);
+                    if (!tickerLines.TryGetValue(symbol, out var sb))
+                    {
+                        sb = new StringBuilder();
+                        tickerLines[symbol] = sb;
+                    }
+                    sb.AppendLine(csvLine);
+                }
+            }
+
+            var count = 0;
+            foreach (var kvp in tickerLines)
+            {
+                var symbol = kvp.Key.ToUpperInvariant();
+                var csvBytes = Encoding.UTF8.GetBytes(kvp.Value.ToString());
+                var zipBytes = WrapLeanDailyZip(symbol, csvBytes);
+                if (zipBytes.Length == 0) continue;
+                StoreCachedZip(symbol, zipBytes);
+                count++;
+            }
+
+            sw.Stop();
+            Log.Trace($"ClickHouseDataProvider.PreHydrate(): hydrated {count}/{chunk.Count} symbols in {sw.ElapsedMilliseconds}ms range={rangeStart:yyyy-MM-dd}->{rangeEnd:yyyy-MM-dd}");
+            return count;
+        }
+
+        private void StoreCachedZip(string ticker, byte[] zipBytes)
+        {
+            var key = DailyZipKey(ticker);
+            _zipBytesCache[key] = zipBytes;
+            if (!_materialize)
+            {
+                return;
+            }
+            try
+            {
+                var normalizedPath = FileExtension.ToNormalizedPath(key);
+                var dir = Path.GetDirectoryName(normalizedPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllBytes(normalizedPath, zipBytes);
+            }
+            catch
+            {
+                // Disk write is optional; RAM cache is the serving path.
+            }
+        }
+
+        private static string DailyZipKey(string ticker)
+        {
+            return $"equity/usa/daily/{ticker.Trim().ToLowerInvariant()}.zip";
+        }
+
+        /// <summary>
+        /// Tickers interpolated into SQL IN lists must be identifier-safe.
+        /// </summary>
+        private static bool IsSafeTicker(string ticker)
+        {
+            if (string.IsNullOrEmpty(ticker) || ticker.Length > 16)
+            {
+                return false;
+            }
+            foreach (var c in ticker)
+            {
+                if (!(char.IsLetterOrDigit(c) || c == '.' || c == '-'))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static byte[] WrapLeanDailyZip(string ticker, byte[] csvBytes)
+        {
+            if (csvBytes == null || csvBytes.Length == 0)
+            {
+                return Array.Empty<byte>();
+            }
+            var lower = ticker.ToLowerInvariant();
+            using var ms = new MemoryStream();
+            using (var zip = new Ionic.Zip.ZipFile())
+            {
+                zip.AddEntry($"{lower}.csv", csvBytes);
+                zip.Save(ms);
+            }
+            return ms.ToArray();
         }
 
         private void BuildAndOptionallyPersist(string key)
@@ -456,6 +436,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
         private byte[] FetchDirectDailyEquityZipBytes(string ticker, DateTime start, DateTime end)
         {
+            if (!IsSafeTicker(ticker))
+            {
+                return Array.Empty<byte>();
+            }
             var sql = $@"
                 SELECT concat(
                     formatDateTime(toDate(date), '%Y%m%d 00:00'), ',',
@@ -465,7 +449,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     toString(round(ifNull(close, 0) * 10000)), ',',
                     toString(toUInt64(ifNull(volume, 0)))
                 )
-                FROM screener_price_tech_daily FINAL
+                FROM {EquityBarTable}
                 WHERE ticker = '{ticker}'
                   AND date BETWEEN toDate('{start:yyyy-MM-dd}') AND toDate('{end:yyyy-MM-dd}')
                   AND close IS NOT NULL
@@ -479,16 +463,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             {
                 Log.Trace($"ClickHouseDataProvider.FetchDirect(): ticker={ticker} range={start:yyyy-MM-dd}->{end:yyyy-MM-dd} rawBytes={(csvBytes?.Length ?? -1)}");
             }
-            var lower = ticker.ToLowerInvariant();
-            var entryName = $"{lower}.csv";
-
-            using var ms = new MemoryStream();
-            using (var zip = new Ionic.Zip.ZipFile())
+            if (csvBytes == null || csvBytes.Length == 0)
             {
-                zip.AddEntry(entryName, csvBytes);
-                zip.Save(ms);
+                return Array.Empty<byte>();
             }
-            return ms.ToArray();
+            return WrapLeanDailyZip(ticker, csvBytes);
         }
 
         private byte[] QueryRawBytes(string sql)
@@ -565,7 +544,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 SELECT
                     max(toDate(date)) AS max_date,
                     max(lastupdated) AS max_lastupdated
-                FROM screener_price_tech_daily FINAL
+                FROM {EquityBarTable}
                 WHERE ticker = '{ticker}'
                   AND date BETWEEN toDate('{start:yyyy-MM-dd}') AND toDate('{end:yyyy-MM-dd}')
                 FORMAT JSONEachRow
@@ -612,7 +591,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     ifNull(low, close) AS low,
                     ifNull(close, 0) AS close,
                     ifNull(volume, 0) AS volume
-                FROM screener_price_tech_daily FINAL
+                FROM {EquityBarTable}
                 WHERE ticker = '{ticker}'
                   AND date BETWEEN toDate('{start:yyyy-MM-dd}') AND toDate('{end:yyyy-MM-dd}')
                   AND close IS NOT NULL

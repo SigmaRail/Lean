@@ -179,6 +179,8 @@ namespace QuantConnect.Lean.Launcher
 
             SetConfigFromJobParameters(algorithmJob, "clickhouse-backtest-start", "clickhouse-backtest-start", "start-date");
             SetConfigFromJobParameters(algorithmJob, "clickhouse-backtest-end", "clickhouse-backtest-end", "end-date");
+            SetConfigFromJobParameters(algorithmJob, "clickhouse-timeout-seconds", "clickhouse-timeout-seconds");
+            SetConfigFromJobParameters(algorithmJob, "initialization-timeout", "initialization-timeout");
         }
 
         private static void SetConfigFromJobParameters(AlgorithmNodePacket algorithmJob, string configKey, params string[] parameterKeys)
