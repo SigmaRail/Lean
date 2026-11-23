@@ -3,12 +3,13 @@ name: Build & Publish LEAN Docker Image
 on:
   push:
     branches:
-      - vera/master
+      - SigmaRail/master
     paths:
       - '**/*.cs'
       - '**/*.csproj'
       - 'Dockerfile'
       - 'build-docker-image'
+      - '.github/workflows/build-docker-image.yml'
   workflow_dispatch:
     inputs:
       platform:
@@ -122,19 +123,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push multi-platform Docker image
         run: |
-          SHORT_SHA="${GITHUB_SHA:0:8}"
+          SHORT_SHA="${GITHUB_SHA:0:12}"
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          PLATFORMS="${{ github.event.inputs.platform || 'linux/amd64,linux/arm64' }}"
 
-          echo "Building and pushing: ${IMAGE}:latest, ${IMAGE}:${SHORT_SHA}"
-          docker build -t "${IMAGE}:latest" -t "${IMAGE}:${SHORT_SHA}" .
-          docker push "${IMAGE}:latest"
-          docker push "${IMAGE}:${SHORT_SHA}"
+          echo "Building and pushing: ${IMAGE}:latest, ${IMAGE}:${SHORT_SHA} (${PLATFORMS})"
+          docker buildx build \
+            --platform "${PLATFORMS}" \
+            --build-arg "LEAN_VERSION=${SHORT_SHA}" \
+            --tag "${IMAGE}:latest" \
+            --tag "${IMAGE}:${SHORT_SHA}" \
+            --push \
+            .
 
-          # Save tags for the summary step
           echo "tags=${IMAGE}:latest,${IMAGE}:${SHORT_SHA}" >> $GITHUB_ENV
-          echo "platform=linux/amd64" >> $GITHUB_ENV
+          echo "platform=${PLATFORMS}" >> $GITHUB_ENV
 
       - name: Image summary
         run: |
@@ -150,5 +161,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Platforms:** ${{ env.platform }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔒 Image is **private** on GitHub Container Registry." >> $GITHUB_STEP_SUMMARY
-          echo "To change visibility, visit https://github.com/orgs/${{ github.repository_owner }}/packages" >> $GITHUB_STEP_SUMMARY
+          echo "Package visibility is managed in GitHub Container Registry settings." >> $GITHUB_STEP_SUMMARY

@@ -8,7 +8,7 @@ This file applies to everything under `Lean/`.
 
 - This repo is a customized LEAN engine fork used for local and CI backtesting.
 - It includes custom ClickHouse integration and a local Docker image workflow.
-- Git remotes, **`master` vs `vera/master`**, and VeraLab / strategy-repo image integration: **`VERA_CUSTOMIZATIONS.md`**.
+- Git remotes, **`master` vs `SigmaRail/master`**, and strategy-repo image integration: **`SIGMARAIL_CUSTOMIZATIONS.md`**.
 
 ## Critical Architecture Rules
 
@@ -82,7 +82,7 @@ This file applies to everything under `Lean/`.
 ## Git Workflow Notes
 
 - **`master`** mirrors **QuantConnect** (`quantconnect/master` remote); keep it free of fork-only commits.
-- All fork work lives on **`vera/master`** (and short-lived branches from it). See **`VERA_CUSTOMIZATIONS.md`** for fetch/rebase/push flow.
+- All SigmaRail fork work lives on **`SigmaRail/master`** (and short-lived branches from it). See **`SIGMARAIL_CUSTOMIZATIONS.md`** for fetch/rebase/push flow.
 - Do not rewrite history or force-push unless explicitly requested.
 
 ## Definition of Done

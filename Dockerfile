@@ -12,6 +12,8 @@ ARG LEAN_VERSION=custom
 
 LABEL description="Custom LEAN engine with ClickHouseDataProvider for ClickHouse data integration"
 LABEL lean_version=${LEAN_VERSION}
+LABEL org.opencontainers.image.source="https://github.com/SigmaRail/Lean"
+LABEL org.opencontainers.image.version=${LEAN_VERSION}
 
 # Install debugpy and PyDevD for remote python debugging
 RUN pip install --no-cache-dir ptvsd==4.3.2 debugpy~=1.6.7 pydevd-pycharm~=231.9225.15

@@ -5,7 +5,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/lean-clickhouse
+  IMAGE_NAME: ${{ github.repository }}/lean-clickhouse
   CLICKHOUSE_HOST: ${{ secrets.CLICKHOUSE_HOST }}
   CLICKHOUSE_PORT: 8123
   CLICKHOUSE_USER: testuser
