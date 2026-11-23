@@ -1,0 +1,28 @@
+#!/bin/bash
+#
+# Push LEAN Docker image to GitHub Container Registry
+# Usage: ./push-docker-image
+#
+
+set -e
+
+# Get git commit hash
+GIT_HASH=$(git rev-parse --short HEAD)
+
+echo "🔐 Logging into GitHub Container Registry..."
+echo $GITHUB_TOKEN | docker login ghcr.io -u mdiggory --password-stdin 2>/dev/null || \
+  gh auth token | docker login ghcr.io -u mdiggory --password-stdin
+
+echo "📤 Pushing Docker images to ghcr.io..."
+
+docker push ghcr.io/mdiggory/lean-clickhouse:latest
+docker push ghcr.io/mdiggory/lean-clickhouse:${GIT_HASH}
+
+echo "✅ Images pushed successfully"
+echo ""
+echo "🔒 Images are PRIVATE and available at:"
+echo "  - ghcr.io/mdiggory/lean-clickhouse:latest"
+echo "  - ghcr.io/mdiggory/lean-clickhouse:${GIT_HASH}"
+echo ""
+echo "To pull the image:"
+echo "  docker pull ghcr.io/mdiggory/lean-clickhouse:latest"

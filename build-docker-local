@@ -1,0 +1,27 @@
+#!/bin/bash
+# Build LEAN Docker image for local ARM64 development
+# This builds for Apple Silicon (M1/M2/M3) Macs
+
+set -e
+
+echo "🔨 Building LEAN for local ARM64 (Apple Silicon)..."
+
+# Build LEAN binaries
+echo "📦 Building LEAN binaries..."
+dotnet build -c Release
+
+echo "🐳 Building Docker image for ARM64..."
+docker build \
+  --tag lean-local:latest \
+  --tag lean-local:$(git rev-parse --short HEAD) \
+  -f Dockerfile \
+  .
+
+echo "✅ Local ARM64 Docker image built successfully"
+echo ""
+echo "📦 Image tags:"
+echo "  - lean-local:latest"
+echo "  - lean-local:$(git rev-parse --short HEAD)"
+echo ""
+echo "🚀 To run a backtest:"
+echo "  docker run --rm -v \$(pwd)/strategies:/strategies -v \$(pwd)/results:/results lean-local:latest --config /config/config.json --algorithm-location /strategies/your_strategy.py"
