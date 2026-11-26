@@ -78,13 +78,13 @@ Expect to re-validate after each upstream bump:
 ## Launcher config vs job parameters
 
 - **Lean CLI / local platform:** ClickHouse connection and backtest window often come from **`config.json`** / **`lean.json`** and project config; see the SigmaRail trading-lab configuration and **`--extra-docker-config`**.
-- **Non–local-platform jobs:** **`ApplyJobParametersToConfig`** maps algorithm job parameters into **`clickhouse-*`** keys (with aliases such as **`vera-host`**) so cloud-style job packets can drive the same provider stack.
+- **Non–local-platform jobs:** **`ApplyJobParametersToConfig`** maps algorithm job parameters into **`clickhouse-*`** keys. Compatibility aliases are retained where older job packets require them.
 
 If you change this mapping, update **`AGENTS.md`** or **`SIGMARAIL_CUSTOMIZATIONS.md`** in the same PR.
 
 ## SigmaRail image consumption
 
-- SigmaRail CI pulls **`ghcr.io/sigmarail/lean/lean-clickhouse`** using a commit-specific tag. The legacy **`LeanProjects/VeraTradingLab/`** consumer can continue using the public `latest` tag during migration.
+- SigmaRail CI pulls **`ghcr.io/sigmarail/lean/lean-clickhouse`** using a commit-specific tag.
 - Self-hosted runners may use **arm64** images; GitHub-hosted **ubuntu** jobs typically use **amd64** **`latest`**.
 
 After changing the fork, rebuild/push the image (your **`build-docker-image`** / **`push-docker-image`** flow) before expecting CI to pick up engine changes.
@@ -133,7 +133,6 @@ git push origin SigmaRail/master --force-with-lease   # if rebased
 - **`AGENTS.md`** (this repo) — architecture, modified paths, build commands, Pydantic/foundation checks.
 - **`Engine/DataFeeds/ClickHouseDataProvider.md`**, **`Common/Data/UniverseSelection/ClickHouseUniverseSelectionIntent.md`**
 - Workspace branching notes (parent repo): **`LeanResources/GIT_WORKFLOW.md`**
-- Strategy runner and image usage: **`LeanProjects/VeraTradingLab/README.md`** and **`docs/GIT_WORKFLOW.md`** inside that repo
 
 ## Maintenance
 
